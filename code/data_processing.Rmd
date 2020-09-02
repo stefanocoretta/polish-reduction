@@ -141,3 +141,72 @@ saveRDS(formant_data, file = "./data/derived/formant_data.rds")
 saveRDS(formant_midpoint, file = "./data/derived/formant_midpoint.rds")
 ```
 
+# Apply PCA and rotation
+
+This function takes a wide spline dataset as input, where spline data are in Cartesian coordinates named X_1:Y_42. This function drops fan lines with missing data, and performs a PCA on the rest of the data.
+
+```{r tongue-contour-pca}
+tongue_contour_pca <- function(df) {
+  # Identify columns without missing values
+  columns <- df %>%
+    select(X_1:Y_42) %>%
+    select_if(~ !any(is.na(.)))
+  
+  # Select columns with no missing values
+  pca.input <-  df %>%
+    select(one_of(colnames(columns)))
+  
+  ## Run PCA
+  tongue.pca <- prcomp(pca.input,
+                       center = TRUE,
+                       scale. = TRUE) 
+  
+  # Add PCs to data set
+  df$PC1 <- predict(tongue.pca, df)[,1]
+  df$PC2 <- predict(tongue.pca, df)[,2]
+  # Include proportion of variance explained for each PC
+  df$PC1_var <- as.numeric(summary(tongue.pca)$importance[2,][1])
+  df$PC2_var <- as.numeric(summary(tongue.pca)$importance[2,][2])
+  return(df)
+}
+```
+
+This function applies linear regression performing formants, based on PC1 and PC2.
+Predicted formant values are added to the data (comp1 and comp2).
+
+```{r rotate-PCs}
+rotate_PCs <- function(df) {
+  f1.lm <- lm(f1.z ~ PC1 + PC2, data = df)
+  df$comp1 <- predict(f1.lm, df)
+
+  f2.lm <- lm(f2.z ~ PC1 + PC2, data = df)
+  df$comp2 = predict(f2.lm, df)
+  return(df)
+}
+```
+
+Run PCA for each speaker in the dataset.
+
+```{r pca-out}
+pca_output <- midpoint_wide %>%
+  filter(label == 'V1') %>%
+  group_by(speaker) %>%
+  do(tongue_contour_pca(.)) %>%
+  ungroup()
+```
+
+```{r midpoint-rotated}
+midpoint_rotated <- pca_output %>%
+  select(speaker, item, block, PC1, PC2, PC1_var, PC2_var) %>%
+  left_join(formant_midpoint %>% select(speaker, item, block, f1.z, f2.z)) %>%
+  group_by(speaker) %>%
+  do(rotate_PCs(.)) %>%
+  ungroup() %>%
+  select(speaker:PC2_var, comp1, comp2) %>%
+  left_join(formant_midpoint)
+```
+
+```{r save-midpoint-rotated}
+saveRDS(midpoint_rotated, file = "./data/derived/midpoint_rotated.rds")
+```
+

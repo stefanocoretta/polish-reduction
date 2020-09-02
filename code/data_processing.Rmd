@@ -81,3 +81,55 @@ saveRDS(midpoint_wide, file = "./data/derived/midpoint_wide.rds")
 saveRDS(midpoint_long, file = "./data/derived/midpoint_long.rds")
 ```
 
+# Process formant data
+
+```{r formant-data}
+formant_data <- read_csv("./data/raw/measurements.csv") %>%
+  filter(!(item %in% c("mimo", "mimoza", "zima", "zimami"))) %>%
+  bind_rows(read_csv("./data/raw/i.csv", na = "--undefined--")) %>%
+  mutate(
+    # Fix replacement character
+    item = str_replace(item, "nowotwÛr", "nowotwor"),
+    start = round(start, 4)
+  )
+
+formant_data[formant_data$item == "ma" & formant_data$start == 453.3759,]$item <- "bywa"
+formant_data[formant_data$item == "ma" & formant_data$start == 470.9234,]$item <- "zywo"
+formant_data[formant_data$item == "ma" & formant_data$start == 473.6989,]$item <- "kuma"
+
+# Substitute outlier measurements with hand-corrected measurements at midpoint
+outliers <- read_csv("./data/raw/outliers.csv")
+formant_data <- anti_join(formant_data, outliers, by = c("speaker", "item", "start", "tp")) %>%
+  bind_rows(outliers)
+
+formant_data <- formant_data %>%
+  # Create block column based on rec date
+  unite("sep", speaker, item, label, remove = FALSE) %>%
+  group_by(sep) %>%
+  mutate(
+    block = as.numeric(as.factor(start))
+  ) %>%
+  # Create rate column based on block column
+  mutate(
+    rate = case_when(
+      block %in% c(1, 2) ~ "Slow",
+      block %in% c(3, 4) ~ "Normal",
+      block %in% c(5, 6) ~ "Fast"
+    )
+  ) %>%
+  mutate(
+    duration = duration * 1000
+  ) %>%
+  # Join tibble with items_data
+  left_join(y = items_data)
+
+# Select only mid-point measurements
+formant_midpoint <- formant_data %>%
+  filter(tp == 5)
+```
+
+```{r save-formant-data}
+saveRDS(formant_data, file = "./data/derived/formant_data.rds")
+saveRDS(formant_midpoint, file = "./data/derived/formant_midpoint.rds")
+```
+

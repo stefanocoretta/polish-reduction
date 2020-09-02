@@ -75,7 +75,8 @@ midpoint_long <- midpoint_wide %>%
   pivot_wider(
     names_from = "coord",
     values_from = "value"
-  )
+  ) %>%
+  mutate(fan_line = as.numeric(fan_line))
 ```
 
 ```{r save-spline-data}

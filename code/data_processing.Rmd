@@ -205,7 +205,9 @@ midpoint_rotated <- pca_output %>%
   do(rotate_PCs(.)) %>%
   ungroup() %>%
   select(speaker:PC2_var, comp1, comp2) %>%
-  left_join(formant_midpoint)
+  left_join(formant_midpoint) %>%
+  select(-sep) %>%
+  rename(z1 = "comp1", z2 = "comp2")
 ```
 
 ```{r save-midpoint-rotated}

@@ -60,7 +60,8 @@ midpoint_wide <- list.files(
     )
   ) %>%
   # Join tibble with items_data
-  left_join(y = items_data)
+  left_join(y = items_data) %>%
+  ungroup()
 ```
 
 ```{r midpoint-long}
@@ -125,7 +126,14 @@ formant_data <- formant_data %>%
 
 # Select only mid-point measurements
 formant_midpoint <- formant_data %>%
-  filter(tp == 5)
+  filter(tp == 5) %>%
+  ungroup() %>%
+  group_by(speaker) %>%
+  mutate(
+    f1.z = scale(f1),
+    f2.z = scale(f2)
+  ) %>%
+  ungroup()
 ```
 
 ```{r save-formant-data}

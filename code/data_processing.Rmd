@@ -54,9 +54,9 @@ midpoint_wide <- list.files(
   # Create rate column based on block column
   mutate(
     rate = case_when(
-      block %in% c(1, 2) ~ "Slow",
-      block %in% c(3, 4) ~ "Normal",
-      block %in% c(5, 6) ~ "Fast"
+      block %in% c(1, 2) ~ "slow",
+      block %in% c(3, 4) ~ "normal",
+      block %in% c(5, 6) ~ "fast"
     )
   ) %>%
   # Join tibble with items_data
@@ -114,9 +114,9 @@ formant_data <- formant_data %>%
   # Create rate column based on block column
   mutate(
     rate = case_when(
-      block %in% c(1, 2) ~ "Slow",
-      block %in% c(3, 4) ~ "Normal",
-      block %in% c(5, 6) ~ "Fast"
+      block %in% c(1, 2) ~ "slow",
+      block %in% c(3, 4) ~ "normal",
+      block %in% c(5, 6) ~ "fast"
     )
   ) %>%
   mutate(

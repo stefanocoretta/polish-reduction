@@ -61,7 +61,8 @@ midpoint_wide <- list.files(
   ) %>%
   # Join tibble with items_data
   left_join(y = items_data) %>%
-  ungroup()
+  ungroup() %>%
+  select(-sep)
 ```
 
 ```{r midpoint-long}
@@ -122,7 +123,8 @@ formant_data <- formant_data %>%
     duration = duration * 1000
   ) %>%
   # Join tibble with items_data
-  left_join(y = items_data)
+  left_join(y = items_data) %>%
+  select(-sep)
 
 # Select only mid-point measurements
 formant_midpoint <- formant_data %>%

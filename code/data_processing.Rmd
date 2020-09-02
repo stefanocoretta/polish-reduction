@@ -1,0 +1,83 @@
+---
+title: "Data processing"
+output: 
+  pdf_document: 
+    number_sections: yes
+    latex_engine: xelatex
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = here::here())
+library(tidyverse)
+library(rticulate)
+```
+
+# Process spline data
+
+```{r midpoint-wide}
+col_names <- c(
+  "speaker",
+  "time_ann",
+  "time_rec",
+  "date",
+  "dur",
+  "prompt",
+  "label"
+)
+
+items_data <- read_csv("./data/raw/items_data.csv")
+
+# Note: Extra empty column in PL02, 3, 4, 7, 8 has been manually removed
+midpoint_wide <- list.files(
+  path = "./data/raw/splines/",
+  pattern = "*.txt",
+  full.names = TRUE
+) %>%
+  read_aaa(., column_names = col_names, format = "wide") %>%
+  # Create item column from prompt
+  mutate(
+    # Extract second word in prompt
+    item = word(prompt, 2),
+    # Remove single quotes
+    item = str_replace_all(item, "'", ""),
+    # Fix replacement character
+    item = str_replace(item, "nowotw�r", "nowotwor"),
+  ) %>%
+  # Create block column based on rec date
+  unite("sep", speaker, item, label, remove = FALSE) %>%
+  group_by(sep) %>%
+  mutate(
+    block = as.numeric(as.factor(date))
+  ) %>%
+  # Create rate column based on block column
+  mutate(
+    rate = case_when(
+      block %in% c(1, 2) ~ "Slow",
+      block %in% c(3, 4) ~ "Normal",
+      block %in% c(5, 6) ~ "Fast"
+    )
+  ) %>%
+  # Join tibble with items_data
+  left_join(y = items_data)
+```
+
+```{r midpoint-long}
+# Make long dataset with spline data
+midpoint_long <- midpoint_wide %>%
+  pivot_longer(
+    matches("[XY]_\\d{1,2}"),
+  ) %>%
+  separate(name, into = c("coord", "fan_line")) %>%
+  pivot_wider(
+    names_from = "coord",
+    values_from = "value"
+  )
+```
+
+```{r save-spline-data}
+saveRDS(midpoint_wide, file = "./data/derived/midpoint_wide.rds")
+saveRDS(midpoint_long, file = "./data/derived/midpoint_long.rds")
+```
+

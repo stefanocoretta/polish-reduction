@@ -1,0 +1,350 @@
+---
+title: "Analysis"
+output: 
+  pdf_document: 
+    number_sections: yes
+    latex_engine: xelatex
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = here::here())
+library(tidyverse)
+library(rticulate)
+library(ggpubr)
+library(ggrepel)
+```
+
+# Prep data
+
+```{r read-data}
+midpoint_rotated <- readRDS("./data/derived/midpoint_rotated.rds")
+midpoint_long <- readRDS("./data/derived/midpoint_long.rds")
+```
+
+```{r prep-data}
+midpoint_rotated <- midpoint_rotated %>%
+  mutate(
+    rate = factor(rate, levels = c("fast", "normal", "slow")),
+    stress = factor(stress, levels = c("unstressed", "stressed")),
+    item = factor(item),
+    V1 = factor(V1),
+    frame = item
+  )
+
+levels(midpoint_rotated$frame) <- c(
+  "b_b", "b_b", "b_w", "b_w", "s_m", "drz_w", "drz_w",
+  "k_m", "k_m", "m_m", "m_m", "ni_b", "ni_b", "n_w",
+  "n_w", "p_p", "p_p", "p_p", "p_p", "rz_p", "rz_p", 
+  "s_m", "z_m", "z_m", "z_w", "z_w"
+)
+
+contrasts(midpoint_rotated$V1) <- "contr.sum"
+
+midpoint_long <- midpoint_long %>%
+  mutate(
+    rate = factor(rate, levels = c("fast", "normal", "slow")),
+    stress = factor(stress, levels = c("unstressed", "stressed"))
+  )
+```
+
+# Illustrate articulatory undershoot
+
+```{r pl01}
+PL01 <- midpoint_long %>%
+  filter(
+    speaker == "PL01" &
+      fan_line >= 6 &
+      fan_line <= 36
+  ) %>%
+  mutate(
+    RateV1 = interaction(rate, V1, sep = "_"),
+    StressV1 = interaction(stress, V1, sep = "_"),
+    V1 = factor(V1)
+  ) 
+```
+
+```{r pl01-rate}
+pl01_rate.gam <- polar_gam(
+  Y ~
+    RateV1 + 
+    s(X) +
+    s(X, by = RateV1),
+  data = PL01
+)
+
+plot_polar_smooths(
+  pl01_rate.gam,
+  series = X,
+  comparison = V,
+  facet_terms = rate,
+  split = list(RateV1 = c("rate", "V")),
+  sep = "_"
+) + 
+  coord_fixed(ratio = 1) + theme_minimal() +
+  scale_x_continuous("tongue position (mm)") +
+  scale_y_continuous("tongue height (mm)")
+```
+
+```{r pl01-stress}
+pl01_stress.gam <- polar_gam(
+  Y ~
+    StressV1 +
+    s(X) +
+    s(X, by = StressV1),
+  data = PL01
+)
+
+plot_polar_smooths(
+  pl01_stress.gam,
+  series = X,
+  comparison = V,
+  facet_terms = stress, 
+  split = list(StressV1 = c("stress", "V")),
+  sep = "_"
+) + 
+  coord_fixed(ratio = 1) + theme_minimal() +
+  scale_x_continuous("tongue position (mm)") +
+  scale_y_continuous("tongue height (mm)")
+```
+
+# Illustrate normalisation
+
+```{r pl01-v}
+pl01.gam <- polar_gam(
+  Y ~
+    V1 +
+    s(X) +
+    s(X, by = V1),
+  data = PL01
+)
+
+PL01.smooths.plot <- plot_polar_smooths(
+  pl01.gam, series = X, comparison = V1
+  ) +
+  coord_fixed(ratio = 1) + 
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        text = element_text(size = 6),
+        legend.key.size = unit(0.6, "lines")) +
+  ggtitle("Tongue contours") +
+  scale_x_continuous("tongue position (mm)") +
+  scale_y_continuous("tongue height (mm)")
+```
+
+```{r sum-pl01}
+sum_PL01 <- midpoint_rotated %>%
+  filter(speaker == "PL01") %>%
+  group_by(V1) %>%
+  summarize(
+    f1.z = mean(f1.z),
+    f2.z = mean(f2.z),
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    z1 = mean(z1),
+    z2 = mean(z2)
+  )
+
+PL01.PCA.plot <- sum_PL01 %>%
+  mutate(V1 = factor(V1, levels = c("i", "e", "y", "a", "o", "u"))) %>%
+  arrange(V1) %>%
+  ggplot() +
+    aes(PC1, PC2, label = V1) +
+    geom_polygon(color = "black", fill = NA, size = 0.25, linetype = "dashed") +
+    geom_text(size = 2.5) +
+    scale_x_reverse("PC1") +
+    scale_y_reverse("PC2") +
+    scale_fill_grey() +
+    theme_minimal() +
+    coord_fixed() + 
+    theme(legend.position = "bottom",
+        text = element_text(size = 6),
+        legend.title = element_blank()) +
+    ggtitle("PCA results")
+
+PL01.rot.plot <- sum_PL01 %>%
+  mutate(V1 = factor(V1, levels = c("i", "e", "y", "a", "o", "u"))) %>%
+  arrange(V1) %>%
+  ggplot() +
+    aes(z2, z1, label = V1) +
+    geom_polygon(color = "black", fill = NA, size = 0.25, linetype = "dashed") +
+    geom_text(size = 2.5) +
+    scale_x_reverse("z2") +
+    scale_y_reverse("z1") +
+    scale_fill_grey() +
+    theme_minimal() +
+    coord_fixed() + 
+    theme(legend.position = "bottom",
+          text = element_text(size = 6),
+          legend.title = element_blank()) +
+    ggtitle("Normalised articulatory space")
+
+PL01.acc.plot <- sum_PL01 %>%
+  mutate(V1 = factor(V1, levels = c("i", "e", "a", "o", "u", "y"))) %>%
+  arrange(V1) %>%
+  ggplot() +
+    aes(f2.z, f1.z, label = V1) +
+    geom_polygon(color = "black", fill = NA, size = 0.25, linetype = "dashed") +
+    geom_text(size = 2.5) +
+    scale_x_reverse("F2.z") +
+    scale_y_reverse("F1.z") +
+    scale_fill_grey() +
+    theme_minimal() +
+    coord_fixed() + 
+    theme(legend.position = "bottom",
+          text = element_text(size = 6),
+          legend.title = element_blank()) +
+    ggtitle("Normalised acoustic space")
+```
+
+```{r save-norm}
+ggarrange(
+  PL01.smooths.plot, PL01.PCA.plot, PL01.rot.plot, PL01.acc.plot,
+  ncol = 2, nrow = 2
+)
+
+ggsave(file = "./figures/norm.pdf", width = 6)
+```
+
+# Descriptive results
+
+```{r rate}
+means <- aggregate(duration ~  rate, midpoint_rotated, mean)
+means$duration <- round(means$duration, 2)
+
+dur.rate <- ggboxplot(midpoint_rotated, x = "rate", y = "duration") +
+  scale_y_continuous("duration (ms)") +
+  scale_x_discrete("rate") +
+  stat_summary(fun = mean, geom = "point", size = 1) +
+  geom_text(data = means, aes(label = duration, y = duration + 5), size = 3) +
+  theme(text = element_text(size = 10))
+```
+
+```{r stress}
+means <- aggregate(duration ~  stress, midpoint_rotated, mean)
+means$duration = round(means$duration, 2)
+
+dur.stress <- ggboxplot(midpoint_rotated, x = "stress", y = "duration") +
+  scale_y_continuous("duration (ms)") +
+  scale_x_discrete("stress") +
+  stat_summary(fun = mean, geom = "point", size = 1) +
+  geom_text(data = means, aes(label = duration, y = duration + 5), size = 3) +
+  theme(text = element_text(size = 10))
+```
+
+```{r save-rate-stress}
+ggarrange(dur.rate, dur.stress, ncol = 2, nrow = 1)
+ggsave(file = "./figures/dur_descriptive.pdf", width = 6, height = 3)
+```
+
+## Acoustic vowel plots
+
+```{r acc}
+acc.vowel.plot.rate <- midpoint_rotated %>%
+  group_by(V1, rate) %>%
+  summarise(mean.f1 = mean(f1.z, na.rm = T),
+            mean.f2 = mean(f2.z, na.rm = T)) %>%
+  ungroup %>%
+  mutate(V1 = factor(V1, levels = c("i", "e", "a", "o", "u", "y")),
+         rate = factor(rate, levels = c("normal", "slow", "fast"))) %>%
+  arrange(rate,V1)
+
+acc.rate <- acc.vowel.plot.rate %>%
+  ggplot() +
+    aes(mean.f2,mean.f1, linetype = rate, label = V1) +
+    geom_polygon(color = "black", fill = NA) +
+    scale_x_reverse("F2.z", limits = c(2, -1.5)) +
+    scale_y_reverse("F1.z", limits = c(2.2, -1.5)) +
+    scale_fill_grey() +
+    theme_minimal() +
+    geom_point() +
+    geom_text_repel(size = 4) +
+    theme(legend.position = "bottom",
+          legend.title = element_blank()) +
+    theme(plot.margin = unit(c(0,0, 0,0), "lines"))
+
+acc.vowel.plot.stress <- midpoint_rotated %>%
+  group_by(V1, stress) %>%
+  summarise(mean.f1 = mean(f1.z, na.rm = T),
+            mean.f2 = mean(f2.z, na.rm = T)) %>%
+  ungroup %>%
+  mutate(V1 = factor(V1, levels = c("i", "e", "a", "o", "u", "y"))) %>%
+  arrange(stress, V1)
+
+acc.stress <- acc.vowel.plot.stress %>%
+  ggplot() +
+    aes(mean.f2,mean.f1, linetype = stress, label = V1) +
+    geom_polygon(color = "black", fill = NA) +
+    scale_x_reverse("F2.z", limits = c(2, -1.5)) +
+    scale_y_reverse("F1.z", limits = c(2.2, -1.5)) +
+    scale_fill_grey() +
+    theme_minimal() +
+    geom_point() +
+    geom_text_repel(size = 4) +
+    theme(legend.position = "bottom",
+          legend.title = element_blank()) +
+    theme(plot.margin = unit(c(0,0, 0,0), "lines"))
+```
+
+## Articulatory vowel space
+
+```{r art}
+art.vowel.plot.rate <- midpoint_rotated %>%
+  group_by(V1, rate) %>%
+  summarise(mean.comp1 = mean(z1, na.rm = T),
+            mean.comp2 = mean(z2, na.rm = T)) %>%
+  ungroup %>%
+  mutate(
+    V1 = factor(V1, levels = c("i", "y", "e", "a", "o", "u")),
+    rate = factor(rate, levels = c("normal", "slow", "fast"))
+  ) %>%
+  arrange(rate,V1)
+
+art.rate <- art.vowel.plot.rate %>%
+  ggplot() +
+    aes(mean.comp2,mean.comp1, linetype = rate, label = V1) +
+    geom_polygon(color = "black", fill = NA) +
+    scale_x_reverse("z2", limits = c(2, -1.5)) +
+    scale_y_reverse("z1", limits = c(1.5, -1.5)) +
+    scale_fill_grey() +
+    theme_minimal() +
+    geom_point() +
+    geom_text_repel(size = 4) +
+    theme(legend.position = "bottom",
+          legend.title = element_blank()) +
+    theme(plot.margin = unit(c(0,0, 0,0), "lines"))
+
+art.vowel.plot.stress <- midpoint_rotated %>%
+  group_by(V1, stress) %>%
+  summarise(mean.comp1 = mean(z1, na.rm = T),
+            mean.comp2 = mean(z2,na.rm = T)) %>%
+  ungroup %>%
+  mutate(V1 = factor(V1, levels = c("i", "y", "e", "a", "o", "u"))) %>%
+  arrange(stress, V1)
+
+art.stress <- art.vowel.plot.stress %>%
+  ggplot() +
+    aes(mean.comp2, mean.comp1, linetype = stress, label = V1) +
+    geom_polygon(color = "black", fill = NA) +
+    scale_x_reverse("z2", limits = c(2, -1.5)) +
+    scale_y_reverse("z1", limits = c(1.5, -1.5)) +
+    scale_fill_grey() +
+    theme_minimal() +
+    geom_point() +
+    geom_text_repel(size = 4) +
+    theme(legend.position = "bottom",
+          legend.title = element_blank()) +
+    theme(plot.margin = unit(c(0,0, 0,0), "lines"))
+```
+
+## Save
+
+```{r save-acc-art}
+ggarrange(acc.rate, acc.stress, art.rate, art.stress, ncol = 2, nrow = 2)
+
+ggsave(file = "./figures/descriptive.pdf", height = 6.5, width = 7)
+```
+
+# Modelling
+

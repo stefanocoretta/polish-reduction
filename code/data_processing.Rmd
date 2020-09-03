@@ -144,6 +144,45 @@ saveRDS(formant_data, file = "./data/derived/formant_data.rds")
 saveRDS(formant_midpoint, file = "./data/derived/formant_midpoint.rds")
 ```
 
+# Process F0 data
+
+```{r pitch}
+pitch <- read_csv("./data/raw/pitch.csv", na = "--undefined--") %>%
+  mutate(
+    item = str_replace(item, "�", "o")
+  )
+
+pitch$start = round(pitch$start, 4)
+pitch[pitch$item == 'ma' & pitch$start == 453.3759,]$item <- 'bywa'
+pitch[pitch$item == 'ma' & pitch$start == 470.9234,]$item <- 'zywo'
+pitch[pitch$item == 'ma' & pitch$start == 473.6989,]$item <- 'kuma'
+
+pitch <- pitch %>%
+  # Create block column based on rec date
+  unite("sep", speaker, item, label, remove = FALSE) %>%
+  group_by(sep) %>%
+  mutate(
+    block = as.numeric(as.factor(start))
+  ) %>%
+  ungroup() %>%
+  select(-sep) %>%
+  # Create rate column based on block column
+  mutate(
+    rate = case_when(
+      block %in% c(1, 2) ~ "slow",
+      block %in% c(3, 4) ~ "normal",
+      block %in% c(5, 6) ~ "fast"
+    )
+  ) %>%
+  group_by(speaker) %>%
+  mutate(f0.z = scale(f0)) %>%
+  ungroup()
+```
+
+```{r save-pitch}
+saveRDS(pitch, file = "./data/derived/pitch.rds")
+```
+
 # Apply PCA and rotation
 
 This function takes a wide spline dataset as input, where spline data are in Cartesian coordinates named X_1:Y_42. This function drops fan lines with missing data, and performs a PCA on the rest of the data.
@@ -208,10 +247,13 @@ midpoint_rotated <- pca_output %>%
   select(speaker:PC2_var, comp1, comp2) %>%
   left_join(formant_midpoint) %>%
   select(-sep) %>%
-  rename(z1 = "comp1", z2 = "comp2")
+  rename(z1 = "comp1", z2 = "comp2") %>%
+  left_join(y = pitch %>% select(speaker, item, block, f0, f0.z), by = c("speaker", "item", "block"))
 ```
 
 ```{r save-midpoint-rotated}
 saveRDS(midpoint_rotated, file = "./data/derived/midpoint_rotated.rds")
 ```
+
+
 

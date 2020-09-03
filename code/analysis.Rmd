@@ -10,6 +10,7 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_knit$set(root.dir = here::here())
+library(usdm)
 library(tidyverse)
 library(rticulate)
 library(ggpubr)
@@ -1018,5 +1019,18 @@ r2(f2.lmer.full)
 r2(f1.lmer.full)
 r2(z2.lmer.full)
 r2(z1.lmer.full)
+```
+
+# VIF
+
+```{r vif}
+midpoint_rotated %>%
+  dplyr::select(duration, f1.z, f2.z, f0.z, rate, stress) %>%
+  mutate(
+    rate = as.numeric(rate) - 1.5,
+    stress = as.numeric(stress) - 1
+  ) %>%
+  as.data.frame(.) %>%
+  usdm::vif(.)
 ```
 

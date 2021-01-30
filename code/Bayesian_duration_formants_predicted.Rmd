@@ -1,0 +1,606 @@
+---
+title: "Bayesian duration, formants, predicted formants"
+author: "Stefano Coretta"
+date: "20/04/2020"
+output: 
+  html_document: 
+    highlight: tango
+    number_sections: yes
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = here::here())
+library(tidyverse)
+theme_set(theme_minimal())
+library(plotly)
+library(brms)
+library(tidybayes)
+library(bayesplot)
+library(extraDistr)
+library(HDInterval)
+library(tools)
+options(mc.cores = parallel::detectCores())
+
+# Check if data have silently changed
+latest <- "4c025af1100291b92df15509b7cd3715"
+if (latest != md5sum("./midpoint_rotated.Rda")[[1]]) {
+  stop("Data have changed!")
+}
+rm(latest)
+
+load("./midpoint_rotated.Rda")
+```
+
+# Clean data
+
+```{r midpoint-clean}
+midpoint_clean <- midpoint_rotated %>%
+  group_by(speaker) %>%
+  mutate(
+    mean.f1 = mean(f1.z),
+    mean.f2 = mean(f2.z),
+    mean.comp1 = mean(comp1),
+    mean.comp2 = mean(comp2)
+  ) %>%
+  ungroup %>%
+  mutate(
+    acc.dist = sqrt((f1.z - mean.f1)^2 + (f2.z - mean.f2)^2), 
+    art.dist = sqrt((comp1 - mean.comp1)^2 + (comp2 - mean.comp2)^2)
+  ) %>%
+  mutate(
+    rate = factor(rate, levels = c('Slow', 'Normal', 'Fast')),
+    stress = factor(stress, levels = c('stressed','pre-stressed')),
+    V1 = as.factor(V1)
+  ) %>%
+  filter(acc.dist < 3)
+
+# Use sum coding for V1
+contrasts(midpoint_clean$V1) <- "contr.sum"
+saveRDS(midpoint_clean, file = "./midpoint_clean.rds")
+```
+
+# Extended model 1
+
+**NOT USED**. See [Duration plus formants model](#duration-plus-formants-model)
+
+Fit a multivariate BRM with the following outcome variables:
+
+* vowel duration
+* normalised F1 (`f1.z`)
+* normalised F2 (`f2.z`)
+* predicted F1 (`comp1`)
+* predicted F2 (`comp2`)
+
+For vowel duration we use a log-normal likelihood, while for the other predictors a Gaussian likelihood.
+
+```{r mod-ext-1-bf}
+bf_duration <- bf(
+  duration ~
+    rate +
+    stress +
+    V1 +
+    rate:V1 +
+    stress:V1 +
+    (1 + rate + stress|p|speaker) +
+    (1 + rate + stress|q|item)
+) + lognormal()
+
+bf_f1.z <- bf(
+  f1.z ~
+    rate +
+    stress +
+    V1 +
+    rate:V1 +
+    stress:V1 +
+    (1 + rate + stress|p|speaker) +
+    (1 + rate + stress|q|item)
+) + gaussian()
+
+bf_f2.z <- bf(
+  f2.z ~
+    rate +
+    stress +
+    V1 +
+    rate:V1 +
+    stress:V1 +
+    (1 + rate + stress|p|speaker) +
+    (1 + rate + stress|q|item)
+) + gaussian()
+
+bf_comp1 <- bf(
+  comp1 ~
+    rate +
+    stress +
+    V1 +
+    rate:V1 +
+    stress:V1 +
+    (1 + rate + stress|p|speaker) +
+    (1 + rate + stress|q|item)
+) + gaussian()
+
+bf_comp2 <- bf(
+  comp2 ~
+    rate +
+    stress +
+    V1 +
+    rate:V1 +
+    stress:V1 +
+    (1 + rate + stress|p|speaker) +
+    (1 + rate + stress|q|item)
+) + gaussian()
+```
+
+## Priors
+
+```{r priors-ext-1, eval=FALSE}
+priors_ext_1 <- c(
+  # Priors for duration
+  # These are the same as in the model with centroid distance
+  prior(normal(0, 3), class = Intercept, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateNormal, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateFast, resp = duration),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed, resp = duration),
+  prior(normal(0, 1), class = b, coef = V11, resp = duration),
+  prior(normal(0, 1), class = b, coef = V12, resp = duration),
+  prior(normal(0, 1), class = b, coef = V13, resp = duration),
+  prior(normal(0, 1), class = b, coef = V14, resp = duration),
+  prior(normal(0, 1), class = b, coef = V15, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateFast:V11, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateFast:V12, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateFast:V13, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateFast:V14, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateFast:V15, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateNormal:V11, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateNormal:V12, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateNormal:V13, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateNormal:V14, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateNormal:V15, resp = duration),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V11, resp = duration),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V12, resp = duration),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V13, resp = duration),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V14, resp = duration),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V15, resp = duration),
+  prior(cauchy(0, 0.1), class = sigma, resp = duration),
+  prior(cauchy(0, 0.1), class = sd, resp = duration),
+  # Priors for f1.z
+  prior(normal(0, 3), class = Intercept, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateNormal, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateFast, resp = f1z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed, resp = f1z),
+  prior(normal(0, 3), class = b, coef = V11, resp = f1z),
+  prior(normal(0, 3), class = b, coef = V12, resp = f1z),
+  prior(normal(0, 3), class = b, coef = V13, resp = f1z),
+  prior(normal(0, 3), class = b, coef = V14, resp = f1z),
+  prior(normal(0, 3), class = b, coef = V15, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateFast:V11, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateFast:V12, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateFast:V13, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateFast:V14, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateFast:V15, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V11, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V12, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V13, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V14, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V15, resp = f1z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V11, resp = f1z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V12, resp = f1z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V13, resp = f1z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V14, resp = f1z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V15, resp = f1z),
+  prior(cauchy(0, 1), class = sigma, resp = f1z),
+  prior(cauchy(0, 1), class = sd, resp = f1z),
+  # Priors for f2.z
+  prior(normal(0, 3), class = Intercept, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateNormal, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateFast, resp = f2z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed, resp = f2z),
+  prior(normal(0, 3), class = b, coef = V11, resp = f2z),
+  prior(normal(0, 3), class = b, coef = V12, resp = f2z),
+  prior(normal(0, 3), class = b, coef = V13, resp = f2z),
+  prior(normal(0, 3), class = b, coef = V14, resp = f2z),
+  prior(normal(0, 3), class = b, coef = V15, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateFast:V11, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateFast:V12, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateFast:V13, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateFast:V14, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateFast:V15, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V11, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V12, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V13, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V14, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V15, resp = f2z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V11, resp = f2z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V12, resp = f2z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V13, resp = f2z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V14, resp = f2z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V15, resp = f2z),
+  prior(cauchy(0, 1), class = sigma, resp = f2z),
+  prior(cauchy(0, 1), class = sd, resp = f2z),
+  # Priors for comp1
+  prior(normal(0, 3), class = Intercept, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateNormal, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateFast, resp = comp1),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed, resp = comp1),
+  prior(normal(0, 3), class = b, coef = V11, resp = comp1),
+  prior(normal(0, 3), class = b, coef = V12, resp = comp1),
+  prior(normal(0, 3), class = b, coef = V13, resp = comp1),
+  prior(normal(0, 3), class = b, coef = V14, resp = comp1),
+  prior(normal(0, 3), class = b, coef = V15, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateFast:V11, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateFast:V12, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateFast:V13, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateFast:V14, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateFast:V15, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateNormal:V11, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateNormal:V12, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateNormal:V13, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateNormal:V14, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateNormal:V15, resp = comp1),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V11, resp = comp1),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V12, resp = comp1),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V13, resp = comp1),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V14, resp = comp1),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V15, resp = comp1),
+  prior(cauchy(0, 1), class = sigma, resp = comp1),
+  prior(cauchy(0, 1), class = sd, resp = comp1),
+  # Priors for comp2
+  prior(normal(0, 3), class = Intercept, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateNormal, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateFast, resp = comp2),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed, resp = comp2),
+  prior(normal(0, 3), class = b, coef = V11, resp = comp2),
+  prior(normal(0, 3), class = b, coef = V12, resp = comp2),
+  prior(normal(0, 3), class = b, coef = V13, resp = comp2),
+  prior(normal(0, 3), class = b, coef = V14, resp = comp2),
+  prior(normal(0, 3), class = b, coef = V15, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateFast:V11, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateFast:V12, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateFast:V13, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateFast:V14, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateFast:V15, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateNormal:V11, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateNormal:V12, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateNormal:V13, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateNormal:V14, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateNormal:V15, resp = comp2),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V11, resp = comp2),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V12, resp = comp2),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V13, resp = comp2),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V14, resp = comp2),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V15, resp = comp2),
+  prior(cauchy(0, 1), class = sigma, resp = comp2),
+  prior(cauchy(0, 1), class = sd, resp = comp2),
+  # General priors
+  prior(lkj(2), class = cor)
+)
+```
+
+```{r mod-ext-1-pcheck, eval=FALSE}
+mod_ext_1_pcheck <- brm(
+  bf_duration + bf_f1.z + bf_f2.z + bf_comp1 + bf_comp2 +
+    # Need this since we are using lognormal (rescor = TRUE calculates the
+    # residual correlations of the response vars, but this is possible only with
+    # Gaussian models).
+    set_rescor(FALSE),
+  data = midpoint_clean,
+  prior = priors_ext_1,
+  sample_prior = "only",
+  file = "./cache/mod_ext_1_pcheck",
+  seed = 3267
+)
+```
+
+```{r mod-ext-1-pcheck-rate, eval=FALSE}
+plot(conditional_effects(mode_ext_1_pcheck, effects = "rate"), ask = FALSE)
+```
+
+```{r mod-ext-1-pcheck-2-v1, eval=FALSE}
+plot(conditional_effects(mode_ext_1_pcheck, effects = "V1"), ask = FALSE)
+```
+
+## Fit model
+
+```{r mod-ext-1, eval=FALSE}
+mod_ext_1 <- brm(
+  bf_duration + bf_f1.z + bf_f2.z + bf_comp1 + bf_comp2 +
+    # Need this since we are using lognormal (rescor = TRUE calculates the
+    # residual correlations of the response vars, but this is possible only with
+    # Gaussian models).
+    set_rescor(FALSE),
+  data = midpoint_clean,
+  prior = priors_ext_1,
+  file = "./cache/mod_ext_1",
+  control = list(adapt_delta = 0.99),
+  seed = 3267
+)
+```
+
+**THE MODEL RETURNED SCARY WARNINGS. DO NOT USE.**
+
+# Duration plus formants model
+
+## Priors
+
+```{r priors-d-ext}
+priors_d_ext <- c(
+  # Priors for duration
+  # These are the same as in the model with centroid distance
+  prior(normal(0, 3), class = Intercept),
+  prior(normal(0, 1), class = b, coef = rateNormal),
+  prior(normal(0, 1), class = b, coef = rateFast),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed),
+  prior(normal(0, 1), class = b, coef = V11),
+  prior(normal(0, 1), class = b, coef = V12),
+  prior(normal(0, 1), class = b, coef = V13),
+  prior(normal(0, 1), class = b, coef = V14),
+  prior(normal(0, 1), class = b, coef = V15),
+  prior(normal(0, 1), class = b, coef = rateFast:V11),
+  prior(normal(0, 1), class = b, coef = rateFast:V12),
+  prior(normal(0, 1), class = b, coef = rateFast:V13),
+  prior(normal(0, 1), class = b, coef = rateFast:V14),
+  prior(normal(0, 1), class = b, coef = rateFast:V15),
+  prior(normal(0, 1), class = b, coef = rateNormal:V11),
+  prior(normal(0, 1), class = b, coef = rateNormal:V12),
+  prior(normal(0, 1), class = b, coef = rateNormal:V13),
+  prior(normal(0, 1), class = b, coef = rateNormal:V14),
+  prior(normal(0, 1), class = b, coef = rateNormal:V15),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V11),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V12),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V13),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V14),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V15),
+  prior(cauchy(0, 0.1), class = sigma),
+  prior(cauchy(0, 0.1), class = sd),
+  # General priors
+  prior(lkj(2), class = cor)
+)
+```
+
+```{r priors-f-ext}
+priors_f_ext <- c(
+  # Priors for f1.z
+  prior(normal(0, 3), class = Intercept, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateNormal, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateFast, resp = f1z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed, resp = f1z),
+  prior(normal(0, 3), class = b, coef = V11, resp = f1z),
+  prior(normal(0, 3), class = b, coef = V12, resp = f1z),
+  prior(normal(0, 3), class = b, coef = V13, resp = f1z),
+  prior(normal(0, 3), class = b, coef = V14, resp = f1z),
+  prior(normal(0, 3), class = b, coef = V15, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateFast:V11, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateFast:V12, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateFast:V13, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateFast:V14, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateFast:V15, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V11, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V12, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V13, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V14, resp = f1z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V15, resp = f1z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V11, resp = f1z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V12, resp = f1z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V13, resp = f1z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V14, resp = f1z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V15, resp = f1z),
+  prior(cauchy(0, 1), class = sigma, resp = f1z),
+  prior(cauchy(0, 1), class = sd, resp = f1z),
+  # Priors for f2.z
+  prior(normal(0, 3), class = Intercept, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateNormal, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateFast, resp = f2z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed, resp = f2z),
+  prior(normal(0, 3), class = b, coef = V11, resp = f2z),
+  prior(normal(0, 3), class = b, coef = V12, resp = f2z),
+  prior(normal(0, 3), class = b, coef = V13, resp = f2z),
+  prior(normal(0, 3), class = b, coef = V14, resp = f2z),
+  prior(normal(0, 3), class = b, coef = V15, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateFast:V11, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateFast:V12, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateFast:V13, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateFast:V14, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateFast:V15, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V11, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V12, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V13, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V14, resp = f2z),
+  prior(normal(0, 3), class = b, coef = rateNormal:V15, resp = f2z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V11, resp = f2z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V12, resp = f2z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V13, resp = f2z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V14, resp = f2z),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V15, resp = f2z),
+  prior(cauchy(0, 1), class = sigma, resp = f2z),
+  prior(cauchy(0, 1), class = sd, resp = f2z),
+  # Priors for comp1
+  prior(normal(0, 3), class = Intercept, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateNormal, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateFast, resp = comp1),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed, resp = comp1),
+  prior(normal(0, 3), class = b, coef = V11, resp = comp1),
+  prior(normal(0, 3), class = b, coef = V12, resp = comp1),
+  prior(normal(0, 3), class = b, coef = V13, resp = comp1),
+  prior(normal(0, 3), class = b, coef = V14, resp = comp1),
+  prior(normal(0, 3), class = b, coef = V15, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateFast:V11, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateFast:V12, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateFast:V13, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateFast:V14, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateFast:V15, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateNormal:V11, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateNormal:V12, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateNormal:V13, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateNormal:V14, resp = comp1),
+  prior(normal(0, 3), class = b, coef = rateNormal:V15, resp = comp1),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V11, resp = comp1),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V12, resp = comp1),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V13, resp = comp1),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V14, resp = comp1),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V15, resp = comp1),
+  prior(cauchy(0, 1), class = sigma, resp = comp1),
+  prior(cauchy(0, 1), class = sd, resp = comp1),
+  # Priors for comp2
+  prior(normal(0, 3), class = Intercept, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateNormal, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateFast, resp = comp2),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed, resp = comp2),
+  prior(normal(0, 3), class = b, coef = V11, resp = comp2),
+  prior(normal(0, 3), class = b, coef = V12, resp = comp2),
+  prior(normal(0, 3), class = b, coef = V13, resp = comp2),
+  prior(normal(0, 3), class = b, coef = V14, resp = comp2),
+  prior(normal(0, 3), class = b, coef = V15, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateFast:V11, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateFast:V12, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateFast:V13, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateFast:V14, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateFast:V15, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateNormal:V11, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateNormal:V12, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateNormal:V13, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateNormal:V14, resp = comp2),
+  prior(normal(0, 3), class = b, coef = rateNormal:V15, resp = comp2),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V11, resp = comp2),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V12, resp = comp2),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V13, resp = comp2),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V14, resp = comp2),
+  prior(normal(0, 3), class = b, coef = stresspreMstressed:V15, resp = comp2),
+  prior(cauchy(0, 1), class = sigma, resp = comp2),
+  prior(cauchy(0, 1), class = sd, resp = comp2),
+  # General priors
+  prior(lkj(2), class = cor)
+)
+```
+
+## Fit models
+
+```{r mod-d-ext}
+mod_d_ext <- brm(
+  duration ~
+    rate +
+    stress +
+    V1 +
+    rate:V1 +
+    stress:V1 +
+    (1 + rate + stress|speaker) +
+    (1 + rate + stress|item),
+  data = midpoint_clean,
+  family = lognormal(),
+  prior = priors_d_ext,
+  file = "./cache/mod_d_ext",
+  control = list(adapt_delta = 0.999, max_treedepth = 20),
+  seed = 3267
+)
+```
+
+This takes 1h40 to run on a fast computer.
+
+```{r mod-f-ext}
+mod_f_ext <- brm(
+  bf_f1.z + bf_f2.z + bf_comp1 + bf_comp2 +
+    # Need this since we are using lognormal (rescor = TRUE calculates the
+    # residual correlations of the response vars, but this is possible only with
+    # Gaussian models).
+    set_rescor(FALSE),
+  data = midpoint_clean,
+  prior = priors_f_ext,
+  file = "./cache/mod_f_ext",
+  control = list(adapt_delta = 0.999, max_treedepth = 20),
+  seed = 3267
+)
+```
+
+## Posterior checks
+
+No divergent transitions, $\hat{R}$ <= 1.
+
+```{r pp-d-ext}
+pp_check(mod_d_ext, nsamples = 100)
+```
+
+```{r pp-f-ext}
+pp_check(mod_f_ext, nsamples = 100, resp = "f1z")
+pp_check(mod_f_ext, nsamples = 100, resp = "f2z")
+pp_check(mod_f_ext, nsamples = 100, resp = "comp1")
+pp_check(mod_f_ext, nsamples = 100, resp = "comp2")
+```
+
+## Summary
+
+```{r d-ext-summary}
+mod_d_ext
+```
+
+```{r f-ext-summary}
+mod_f_ext
+```
+
+## Conditional effects
+
+```{r d-ext}
+conditional_effects(mod_d_ext, effects = "V1:rate", re_formula = NULL)
+conditional_effects(mod_d_ext, effects = "V1:stress", re_formula = NULL)
+```
+
+
+```{r f-ext-rate}
+cond_rate <- conditional_effects(mod_f_ext, effects = "V1:rate", re_formula = NULL)
+
+cond_rate[[1]] %>%
+  ggplot(aes(V1, estimate__, colour = rate)) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = lower__, ymax = upper__), width = 0.5, position = position_dodge(width = 0.5)) +
+  labs(y = "f1z") +
+  ylim(-3, 3)
+cond_rate[[3]] %>%
+  ggplot(aes(V1, estimate__, colour = rate)) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = lower__, ymax = upper__), width = 0.5, position = position_dodge(width = 0.5)) +
+  labs(y = "comp1") +
+  ylim(-3, 3)
+
+cond_rate[[2]] %>%
+  ggplot(aes(V1, estimate__, colour = rate)) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = lower__, ymax = upper__), width = 0.5, position = position_dodge(width = 0.5)) +
+  labs(y = "f2z") +
+  ylim(-3, 3)
+cond_rate[[4]] %>%
+  ggplot(aes(V1, estimate__, colour = rate)) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = lower__, ymax = upper__), width = 0.5, position = position_dodge(width = 0.5)) +
+  labs(y = "comp2") +
+  ylim(-3, 3)
+```
+
+```{r f-ext-stress}
+cond_stress <- conditional_effects(mod_f_ext, effects = "V1:stress", re_formula = NULL)
+
+cond_stress[[1]] %>%
+  ggplot(aes(V1, estimate__, colour = stress)) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = lower__, ymax = upper__), width = 0.5, position = position_dodge(width = 0.5)) +
+  labs(y = "f1z") +
+  ylim(-3, 3)
+cond_stress[[3]] %>%
+  ggplot(aes(V1, estimate__, colour = stress)) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = lower__, ymax = upper__), width = 0.5, position = position_dodge(width = 0.5)) +
+  labs(y = "comp1") +
+  ylim(-3, 3)
+
+cond_stress[[2]] %>%
+  ggplot(aes(V1, estimate__, colour = stress)) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = lower__, ymax = upper__), width = 0.5, position = position_dodge(width = 0.5)) +
+  labs(y = "f2z") +
+  ylim(-3, 3)
+cond_stress[[4]] %>%
+  ggplot(aes(V1, estimate__, colour = stress)) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = lower__, ymax = upper__), width = 0.5, position = position_dodge(width = 0.5)) +
+  labs(y = "comp2") +
+  ylim(-3, 3)
+```
+

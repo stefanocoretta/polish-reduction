@@ -1,0 +1,626 @@
+---
+title: "Bayesian analysis of centroid distance"
+author: "Stefano Coretta"
+date: "24/03/2020"
+output: 
+  html_document: 
+    highlight: tango
+    number_sections: yes
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = here::here())
+library(tidyverse)
+theme_set(theme_minimal())
+library(plotly)
+library(brms)
+library(tidybayes)
+library(bayesplot)
+library(extraDistr)
+library(HDInterval)
+library(tools)
+options(mc.cores = parallel::detectCores())
+
+# Check if data have silently changed
+latest <- "4c025af1100291b92df15509b7cd3715"
+if (latest != md5sum("./midpoint_rotated.Rda")[[1]]) {
+  stop("Data have changed!")
+}
+rm(latest)
+
+load("./midpoint_rotated.Rda")
+```
+
+# Clean data
+
+```{r midpoint-clean}
+midpoint_clean <- midpoint_rotated %>%
+  group_by(speaker) %>%
+  mutate(
+    mean.f1 = mean(f1.z),
+    mean.f2 = mean(f2.z),
+    mean.comp1 = mean(comp1),
+    mean.comp2 = mean(comp2)
+  ) %>%
+  ungroup %>%
+  mutate(
+    acc.dist = sqrt((f1.z - mean.f1)^2 + (f2.z - mean.f2)^2), 
+    art.dist = sqrt((comp1 - mean.comp1)^2 + (comp2 - mean.comp2)^2)
+  ) %>%
+  mutate(
+    rate = factor(rate, levels = c('Slow', 'Normal', 'Fast')),
+    stress = factor(stress, levels = c('stressed','pre-stressed')),
+    V1 = as.factor(V1)
+  ) %>%
+  filter(acc.dist < 3)
+
+# Use sum coding for V1
+contrasts(midpoint_clean$V1) <- "contr.sum"
+saveRDS(midpoint_clean, file = "./midpoint_clean.rds")
+```
+
+# 3D scatter plot of duration, acoustic and articulatory distance
+
+```{r 3dscatter-rate}
+plot_ly(
+  midpoint_clean,
+  x = ~duration,
+  y = ~art.dist,
+  z = ~acc.dist,
+  color = ~rate, marker = list(size = 3)
+)
+```
+
+Not much going on, except that acoustic and articulatory distance are correlated.
+
+```{r 3dscatter-stress}
+plot_ly(
+  midpoint_clean,
+  x = ~duration,
+  y = ~art.dist,
+  z = ~acc.dist,
+  color = ~stress, marker = list(size = 3)
+)
+```
+
+# Model
+
+We can fit a multivariate model with `duration` (vowel duration), `acc.dist` (distance from the acoustic centroid), and `art.dist` (distance from the articulatory centroid) as outcome variables.
+
+To model the effect of speech rate and lexical stress, we include `rate` and `stress`.
+Since we expect different vowels to behave differently (some vowels are more reduced than others), we also want to include interactions of the two predictors with `V1` (vowel).
+
+Do we need an interaction between speech rate and lexical stress?
+Probably not at this time.
+What about having vowel height instead of individual vowels?
+
+I would probably use a log-normal distribution as the likelihood, since we have durations and distances which are all positive.
+For distance, the recommended distribution is the chi distribution, but we would need to write our won custom definition of the distribution and it might be difficult to fit anyway.
+
+# Priors
+
+Let's get the needed prior specs for the model.
+Priors in the `lognormal()` family are specified in logs.
+
+```{r prior-df}
+prior_df <- get_prior(
+  bf(
+    mvbind(duration, acc.dist, art.dist) ~
+      rate +
+      stress +
+      V1 +
+      rate:V1 +
+      stress:V1 +
+      (1 + rate + stress + V1|p|speaker) +
+      (1 + rate + stress + V1|q|item)
+  ) +
+    # Need this since we are using lognormal (rescor = TRUE calculates the
+    # residual correlations of the response vars, but this is possible only with
+    # Gaussian models).
+    set_rescor(FALSE),
+  data = midpoint_clean,
+  family = lognormal()
+)
+```
+
+## Priors for vowel duration
+
+### Duration intercept
+
+Prior for the **duration intercept** (= vowel duration when speech rate is slow, stress is stressed and vowel is at the mean value).
+
+```{r dur-int-log}
+invisible(sapply(
+  list(4, 5, 6),
+  function(x) {
+    cat("A log-odd of", x, "corresponds to", round(exp(x))[[1]], "ms.\n")
+  }
+))
+```
+
+The prior `normal(0, 3)` can be interpreted to mean that we expect at 95% confidence that the intercept of vowel duration at the reference levels is between 0 and 400 ms.
+The CI upper limit = `exp(3 * 2)` = 400.
+
+```{r duration-intercept}
+ggplot() +
+  aes(x = c(-15, 15)) +
+  stat_function(fun = dnorm, n = 101, args = list(0, 3)) +
+  labs(title = "Duration intercept prior (logs)", subtitle = "normal(0, 3)")
+```
+
+### Effect of rate
+
+Prior for the **effect of rate** (`rate = Normal` and `rate = Fast`) on vowel duration.
+
+```{r dur-rate-log}
+invisible(sapply(
+  list(-5, -0.5, -0.2, 0.2, 0.5, 0.7, 1),
+  function(x) {
+    cat("A log-odd of", x, "corresponds to", round(exp(x), 2)[[1]], "odds.\n")
+  }
+))
+```
+
+The prior `normal(0, 0.35)` can be interpreted to mean that we expect at 95% confidence that the effect of rate on vowel duration at the reference levels is between 0.5 and 2 in odds (i.e. halving or doubling the intercept).
+The CI lower limit = `exp(-0.35 * 2)` = 0.5, the CI upper limit = `exp(0.35 * 2)` = 2.
+
+Should we bound the prior to negative values only? We do expect speech rate (from slow to fast) and stress (from stressed to pre-stressed) to reduce vowels, rather than make them more hyperarticulated.
+Do we want to commit to this? No, Paul B. says it is not good to set boundaries on effects.
+
+```{r duration-rate}
+ggplot() +
+  aes(x = c(-1.5, 1.5)) +
+  stat_function(fun = dnorm, n = 101, args = list(0, 0.35)) +
+  labs(title = "Duration intercept prior (logs)", subtitle = "normal(0, 0.35)")
+```
+
+### Effects of stress
+
+The prior for the **effect of stress** (`stress = pre-stressed`) on vowel duration is the same as the one for rate.
+
+### Effect of vowel
+
+We expect the prior for the **effect of vowel** to be bigger than the other effects.
+
+The prior `normal(0, 0.7)` can be interpreted to mean that we expect at 95% confidence that the effect of rate on vowel duration at the reference levels is between 0.2 and 4.4 in odds.
+The CI lower limit = `exp(-0.7 * 2)` = 0.25, the CI upper limit = `exp(0.7 * 2)` = 4.
+
+### Interactions
+
+The prior is `normal(0, 0.35)`, same as rate and stress.
+
+### Sigma
+
+Prior for **sigma**.
+
+```{r duration-sigma}
+ggplot() +
+  aes(x = c(0, 2)) +
+  stat_function(fun = dcauchy, n = 101, args = list(0, 0.1)) +
+  labs(title = "Duration sigma (logs)", subtitle = "halfCauchy(0, 0.1)")
+```
+
+This prior means that we expect a sigma between 0 and 2.55 in logs at 95% confidence.
+
+```{r duration-s-hdi}
+inverseCDF(c(0.025, 0.975), phcauchy, 0.1)
+```
+
+
+### Standard deviation
+
+The prior for **standard deviation** of random effects is the same as that for sigma.
+
+## Priors for acoustic distance
+
+### Acoustic distance intercept
+
+Prior for the acoustic distance intercept (= vowel duration when speech rate is slow, stress is stressed and vowel is at the mean).
+
+```{r acc-int-log}
+invisible(sapply(
+  list(0, 1, 2),
+  function(x) {
+    cat("A log-odd of", x, "corresponds to", exp(x)[[1]], "SD.\n")
+  }
+))
+```
+
+We can interpret the prior `normal(0, 0.55)` as the expectation that the intercept of acoustic distance from the centroid at the reference levels is between 0.25 and 3 SD at 95% confidence.
+
+```{r acc-intercept}
+ggplot() +
+  aes(x = c(-3, 3)) +
+  stat_function(fun = dnorm, n = 101, args = list(0, 0.55)) +
+  labs(title = "Acoustic distance intercept prior (logs)", subtitle = "normal(0, 0.55)")
+```
+
+### Effect of rate, stress, vowel, interactions
+
+The priors for the **effect of rate** (`rate = Normal` and `rate = Fast`), **stress** (`stress = "prestressed"`), and vowel on acoustic distance are the same as for duration.
+We don't expect the effects to be smaller than 0.5 and greater than 2 in odds (we don't expect these effect to make the measures less than half as small or more than twice as big).
+
+The prior for the interactions with V1 is the same as the prior of V1.
+
+### Sigma and standard deviation
+
+Prior for **sigma** and **sd**.
+
+```{r acc-sigma}
+ggplot() +
+  aes(x = c(0, 1)) +
+  stat_function(fun = dcauchy, n = 101, args = list(0, 0.05)) +
+  labs(title = "Duration sigma (logs)")
+```
+
+## Priors for articulatory distance
+
+We use the same priors of acoustic distance for articulatory distance since they are on a similar scale.
+
+## Prior predictive checks
+
+```{r prior-check-1}
+priors_1 <- c(
+  # Priors for duration
+  prior(normal(0, 3), class = Intercept, resp = duration),
+  prior(normal(0, 0.35), class = b, coef = rateNormal, resp = duration),
+  prior(normal(0, 0.35), class = b, coef = rateFast, resp = duration),
+  prior(normal(0, 0.35), class = b, coef = stresspreMstressed, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = V11, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = V12, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = V13, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = V14, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = V15, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = rateFast:V11, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = rateFast:V12, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = rateFast:V13, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = rateFast:V14, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = rateFast:V15, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = rateNormal:V11, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = rateNormal:V12, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = rateNormal:V13, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = rateNormal:V14, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = rateNormal:V15, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = stresspreMstressed:V11, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = stresspreMstressed:V12, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = stresspreMstressed:V13, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = stresspreMstressed:V14, resp = duration),
+  prior(normal(0, 0.7), class = b, coef = stresspreMstressed:V15, resp = duration),
+  prior(cauchy(0, 0.1), class = sigma, resp = duration),
+  prior(cauchy(0, 0.1), class = sd, resp = duration),
+  # Priors for acc.dist
+  prior(normal(0, 0.55), class = Intercept, resp = accdist),
+  prior(normal(0, 0.35), class = b, coef = rateNormal, resp = accdist),
+  prior(normal(0, 0.35), class = b, coef = rateFast, resp = accdist),
+  prior(normal(0, 0.35), class = b, coef = stresspreMstressed, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = V11, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = V12, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = V13, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = V14, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = V15, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = rateFast:V11, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = rateFast:V12, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = rateFast:V13, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = rateFast:V14, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = rateFast:V15, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = rateNormal:V11, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = rateNormal:V12, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = rateNormal:V13, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = rateNormal:V14, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = rateNormal:V15, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = stresspreMstressed:V11, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = stresspreMstressed:V12, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = stresspreMstressed:V13, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = stresspreMstressed:V14, resp = accdist),
+  prior(normal(0, 0.7), class = b, coef = stresspreMstressed:V15, resp = accdist),
+  prior(cauchy(0, 0.05), class = sigma, resp = accdist),
+  prior(cauchy(0, 0.05), class = sd, resp = accdist),
+  # Priors for art.dist
+  prior(normal(0, 0.55), class = Intercept, resp = artdist),
+  prior(normal(0, 0.35), class = b, coef = rateNormal, resp = artdist),
+  prior(normal(0, 0.35), class = b, coef = rateFast, resp = artdist),
+  prior(normal(0, 0.35), class = b, coef = stresspreMstressed, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = V11, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = V12, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = V13, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = V14, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = V15, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = rateFast:V11, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = rateFast:V12, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = rateFast:V13, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = rateFast:V14, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = rateFast:V15, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = rateNormal:V11, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = rateNormal:V12, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = rateNormal:V13, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = rateNormal:V14, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = rateNormal:V15, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = stresspreMstressed:V11, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = stresspreMstressed:V12, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = stresspreMstressed:V13, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = stresspreMstressed:V14, resp = artdist),
+  prior(normal(0, 0.7), class = b, coef = stresspreMstressed:V15, resp = artdist),
+  prior(cauchy(0, 0.05), class = sigma, resp = artdist),
+  prior(cauchy(0, 0.05), class = sd, resp = artdist),
+  # General priors
+  prior(lkj(2), class = cor)
+)
+
+reduc_1_pcheck <- brm(
+  bf(
+    mvbind(duration, acc.dist, art.dist) ~
+      rate +
+      stress +
+      V1 +
+      rate:V1 +
+      stress:V1 +
+      (1 + rate + stress|p|speaker) +
+      (1 + rate + stress|q|item)
+  ) +
+    # Need this since we are using lognormal (rescor = TRUE calculates the
+    # residual correlations of the response vars, but this is possible only with
+    # Gaussian models).
+    set_rescor(FALSE),
+  data = midpoint_clean,
+  family = lognormal(),
+  prior = priors_1,
+  sample_prior = "only",
+  file = "./cache/reduc_1_pcheck",
+  seed = 3267
+)
+```
+
+```{r prior-check-1-rate}
+plot(conditional_effects(reduc_1_pcheck, effects = "rate"), ask = FALSE)
+```
+
+```{r prior-check-1-v1}
+plot(conditional_effects(reduc_1_pcheck, effects = "V1"), ask = FALSE)
+```
+
+```{r prior-check-2}
+priors_2 <- c(
+  # Priors for duration
+  prior(normal(0, 3), class = Intercept, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateNormal, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateFast, resp = duration),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed, resp = duration),
+  prior(normal(0, 1), class = b, coef = V11, resp = duration),
+  prior(normal(0, 1), class = b, coef = V12, resp = duration),
+  prior(normal(0, 1), class = b, coef = V13, resp = duration),
+  prior(normal(0, 1), class = b, coef = V14, resp = duration),
+  prior(normal(0, 1), class = b, coef = V15, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateFast:V11, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateFast:V12, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateFast:V13, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateFast:V14, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateFast:V15, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateNormal:V11, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateNormal:V12, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateNormal:V13, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateNormal:V14, resp = duration),
+  prior(normal(0, 1), class = b, coef = rateNormal:V15, resp = duration),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V11, resp = duration),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V12, resp = duration),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V13, resp = duration),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V14, resp = duration),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V15, resp = duration),
+  prior(cauchy(0, 0.1), class = sigma, resp = duration),
+  prior(cauchy(0, 0.1), class = sd, resp = duration),
+  # Priors for acc.dist
+  prior(normal(0, 3), class = Intercept, resp = accdist),
+  prior(normal(0, 1), class = b, coef = rateNormal, resp = accdist),
+  prior(normal(0, 1), class = b, coef = rateFast, resp = accdist),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed, resp = accdist),
+  prior(normal(0, 1), class = b, coef = V11, resp = accdist),
+  prior(normal(0, 1), class = b, coef = V12, resp = accdist),
+  prior(normal(0, 1), class = b, coef = V13, resp = accdist),
+  prior(normal(0, 1), class = b, coef = V14, resp = accdist),
+  prior(normal(0, 1), class = b, coef = V15, resp = accdist),
+  prior(normal(0, 1), class = b, coef = rateFast:V11, resp = accdist),
+  prior(normal(0, 1), class = b, coef = rateFast:V12, resp = accdist),
+  prior(normal(0, 1), class = b, coef = rateFast:V13, resp = accdist),
+  prior(normal(0, 1), class = b, coef = rateFast:V14, resp = accdist),
+  prior(normal(0, 1), class = b, coef = rateFast:V15, resp = accdist),
+  prior(normal(0, 1), class = b, coef = rateNormal:V11, resp = accdist),
+  prior(normal(0, 1), class = b, coef = rateNormal:V12, resp = accdist),
+  prior(normal(0, 1), class = b, coef = rateNormal:V13, resp = accdist),
+  prior(normal(0, 1), class = b, coef = rateNormal:V14, resp = accdist),
+  prior(normal(0, 1), class = b, coef = rateNormal:V15, resp = accdist),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V11, resp = accdist),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V12, resp = accdist),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V13, resp = accdist),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V14, resp = accdist),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V15, resp = accdist),
+  prior(cauchy(0, 0.1), class = sigma, resp = accdist),
+  prior(cauchy(0, 0.1), class = sd, resp = accdist),
+  # Priors for art.dist
+  prior(normal(0, 3), class = Intercept, resp = artdist),
+  prior(normal(0, 1), class = b, coef = rateNormal, resp = artdist),
+  prior(normal(0, 1), class = b, coef = rateFast, resp = artdist),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed, resp = artdist),
+  prior(normal(0, 1), class = b, coef = V11, resp = artdist),
+  prior(normal(0, 1), class = b, coef = V12, resp = artdist),
+  prior(normal(0, 1), class = b, coef = V13, resp = artdist),
+  prior(normal(0, 1), class = b, coef = V14, resp = artdist),
+  prior(normal(0, 1), class = b, coef = V15, resp = artdist),
+  prior(normal(0, 1), class = b, coef = rateFast:V11, resp = artdist),
+  prior(normal(0, 1), class = b, coef = rateFast:V12, resp = artdist),
+  prior(normal(0, 1), class = b, coef = rateFast:V13, resp = artdist),
+  prior(normal(0, 1), class = b, coef = rateFast:V14, resp = artdist),
+  prior(normal(0, 1), class = b, coef = rateFast:V15, resp = artdist),
+  prior(normal(0, 1), class = b, coef = rateNormal:V11, resp = artdist),
+  prior(normal(0, 1), class = b, coef = rateNormal:V12, resp = artdist),
+  prior(normal(0, 1), class = b, coef = rateNormal:V13, resp = artdist),
+  prior(normal(0, 1), class = b, coef = rateNormal:V14, resp = artdist),
+  prior(normal(0, 1), class = b, coef = rateNormal:V15, resp = artdist),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V11, resp = artdist),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V12, resp = artdist),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V13, resp = artdist),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V14, resp = artdist),
+  prior(normal(0, 1), class = b, coef = stresspreMstressed:V15, resp = artdist),
+  prior(cauchy(0, 0.1), class = sigma, resp = artdist),
+  prior(cauchy(0, 0.1), class = sd, resp = artdist),
+  # General priors
+  prior(lkj(2), class = cor)
+)
+
+reduc_2_pcheck <- brm(
+  bf(
+    mvbind(duration, acc.dist, art.dist) ~
+      rate +
+      stress +
+      V1 +
+      rate:V1 +
+      stress:V1 +
+      (1 + rate + stress|p|speaker) +
+      (1 + rate + stress|q|item)
+  ) +
+    # Need this since we are using lognormal (rescor = TRUE calculates the
+    # residual correlations of the response vars, but this is possible only with
+    # Gaussian models).
+    set_rescor(FALSE),
+  data = midpoint_clean,
+  family = lognormal(),
+  prior = priors_2,
+  sample_prior = "only",
+  file = "./cache/reduc_2_pcheck",
+  seed = 3267
+)
+```
+
+```{r prior-check-2-rate}
+plot(conditional_effects(reduc_2_pcheck, effects = "rate"), ask = FALSE)
+```
+
+```{r prior-check-2-v1}
+plot(conditional_effects(reduc_2_pcheck, effects = "V1"), ask = FALSE)
+```
+
+# Fit models
+
+```{r reduc-1, eval=FALSE, echo=FALSE}
+reduc_1 <- brm(
+  bf(
+    mvbind(duration, acc.dist, art.dist) ~
+      rate +
+      stress +
+      V1 +
+      rate:V1 +
+      stress:V1 +
+      (1 + rate + stress|p|speaker) +
+      (1 + rate + stress|q|item)
+  ) +
+    # Need this since we are using lognormal (rescor = TRUE calculates the
+    # residual correlations of the response vars, but this is possible only with
+    # Gaussian models).
+    set_rescor(FALSE),
+  data = midpoint_clean,
+  family = lognormal(),
+  prior = priors_1,
+  file = "./cache/reduc_1",
+  seed = 8637
+)
+```
+
+```{r reduc-2}
+reduc_2 <- brm(
+  bf(
+    mvbind(duration, acc.dist, art.dist) ~
+      rate +
+      stress +
+      V1 +
+      rate:V1 +
+      stress:V1 +
+      (1 + rate + stress|p|speaker) +
+      (1 + rate + stress|q|item)
+  ) +
+    # Need this since we are using lognormal (rescor = TRUE calculates the
+    # residual correlations of the response vars, but this is possible only with
+    # Gaussian models).
+    set_rescor(FALSE),
+  data = midpoint_clean,
+  family = lognormal(),
+  prior = priors_2,
+  file = "./cache/reduc_2",
+  seed = 8637,
+  control = list(adapt_delta = 0.99, max_treedepth = 20)
+)
+```
+
+# Model reduc-2
+
+## Posterior checks
+
+```{r reduc-2-pp}
+pp_check(reduc_2, resp = "duration", nsamples = 100)
+pp_check(reduc_2, resp = "accdist", nsamples = 100)
+pp_check(reduc_2, resp = "artdist", nsamples = 100)
+```
+
+Duration is great. Acoustic and articulatory distance are not amazing, but I think we'll have to leave with them.
+
+Let's plot posterior shrinkage vs posterior z-scores. Points in the bottom right quadrant of the plots is a good sign (priors do not dominate the posterior).
+
+```{r m1-ln-fixed}
+reduc_2_fixed <- fixef(reduc_2) %>% as_tibble(rownames = "term")
+```
+
+```{r m1-ln-sensitivity, warning=FALSE}
+reduc_2_fixed %>%
+  separate(term, c("resp", "term"), sep = "_") %>%
+  mutate(
+    theta = rep(0, 72),
+    sigma_prior = c(3, 3, 3, rep(1, 69)),
+    # it's called here std.error but is the standard deviation
+    z = abs((Estimate - theta) / Est.Error),
+    s = 1 - (Est.Error^2 / sigma_prior^2)
+  ) %>%
+  ggplot(aes(s, z, label = term)) +
+  geom_point() +
+  geom_label(nudge_x = -0.1, size = 2, alpha = 0.5) +
+  xlim(0, 1) + ylim(0, 5) +
+  facet_wrap(~ resp, ncol = 2)
+```
+
+These are fine, we might overfit a bit (points in the top right quadrant), but not a big deal.
+
+$\hat{R}$ values are fine, indicating convergence. There were no divergent transitions. Chains have mixed well.
+
+## Posteriors
+
+```{r reduc-2-cond-rate}
+# re_formula = NULL includes uncertainty from all random effects 
+plot(conditional_effects(reduc_2, effects = "V1:rate", re_formula = NULL), ask = FALSE)
+```
+
+```{r reduc-2-cond-stress}
+plot(conditional_effects(reduc_2, effects = "V1:stress", re_formula = NULL), ask = FALSE)
+```
+
+```{r mcmc-dur-rate}
+mcmc_areas(reduc_2, regex_pars = "^b_duration_rate") + geom_vline(xintercept = 0)
+```
+
+```{r mcmc-dur-stress}
+mcmc_areas(reduc_2, regex_pars = "^b_duration_stress") + geom_vline(xintercept = 0)
+```
+
+```{r mcmc-acc-rate}
+mcmc_areas(reduc_2, regex_pars = "^b_accdist_rate") + geom_vline(xintercept = 0)
+```
+
+```{r mcmc-art-rate}
+mcmc_areas(reduc_2, regex_pars = "^b_artdist_rate") + geom_vline(xintercept = 0)
+```
+
+```{r mcmc-acc-stress}
+mcmc_areas(reduc_2, regex_pars = "^b_accdist_stress") + geom_vline(xintercept = 0)
+```
+
+```{r mcmc-art-stress}
+mcmc_areas(reduc_2, regex_pars = "^b_artdist_stress") + geom_vline(xintercept = 0)
+```
+

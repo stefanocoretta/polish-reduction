@@ -1,10 +1,11 @@
 ---
 title: "Analysis"
-output: 
-  pdf_document: 
-    number_sections: yes
-    latex_engine: xelatex
-    highlight: tango
+output:
+  rmdformats::material:
+    use_bookdown: true
+    fig_width: 7
+    fig_height: 5
+    css: "style.css"
 ---
 
 ```{r setup, include=FALSE}
@@ -19,6 +20,7 @@ library(lme4)
 library(optimx)
 library(performance)
 library(effects)
+library(sjPlot)
 pl_theme <- theme(
   axis.text = element_text(size = 14),
   axis.text.x = element_text(size = 12),
@@ -27,7 +29,7 @@ pl_theme <- theme(
 )
 ```
 
-# Prep data
+# Prepare data
 
 ```{r read-data}
 midpoint_rotated <- readRDS("./data/derived/midpoint_rotated.rds")
@@ -61,7 +63,7 @@ midpoint_long <- midpoint_long %>%
   )
 ```
 
-# Illustrate articulatory undershoot
+# Normalisation procedure
 
 ```{r pl01}
 PL01 <- midpoint_long %>%
@@ -77,53 +79,7 @@ PL01 <- midpoint_long %>%
   ) 
 ```
 
-```{r pl01-rate}
-pl01_rate.gam <- polar_gam(
-  Y ~
-    RateV1 + 
-    s(X) +
-    s(X, by = RateV1),
-  data = PL01
-)
-
-plot_polar_smooths(
-  pl01_rate.gam,
-  series = X,
-  comparison = V,
-  facet_terms = rate,
-  split = list(RateV1 = c("rate", "V")),
-  sep = "_"
-) + 
-  coord_fixed(ratio = 1) + theme_minimal() +
-  scale_x_continuous("tongue position (mm)") +
-  scale_y_continuous("tongue height (mm)")
-```
-
-```{r pl01-stress}
-pl01_stress.gam <- polar_gam(
-  Y ~
-    StressV1 +
-    s(X) +
-    s(X, by = StressV1),
-  data = PL01
-)
-
-plot_polar_smooths(
-  pl01_stress.gam,
-  series = X,
-  comparison = V,
-  facet_terms = stress, 
-  split = list(StressV1 = c("stress", "V")),
-  sep = "_"
-) + 
-  coord_fixed(ratio = 1) + theme_minimal() +
-  scale_x_continuous("tongue position (mm)") +
-  scale_y_continuous("tongue height (mm)")
-```
-
-# Illustrate normalisation
-
-```{r pl01-v}
+```{r pl01-v, cache=TRUE}
 pl01.gam <- polar_gam(
   Y ~
     V1 +
@@ -219,7 +175,56 @@ ggarrange(
 ggsave(file = "./figures/norm.pdf", width = 6)
 ```
 
-# Descriptive results
+
+# Descriptive stats plots
+
+## Articulatory undershoot
+
+```{r pl01-rate, cache=TRUE}
+pl01_rate.gam <- polar_gam(
+  Y ~
+    RateV1 + 
+    s(X) +
+    s(X, by = RateV1),
+  data = PL01
+)
+
+plot_polar_smooths(
+  pl01_rate.gam,
+  series = X,
+  comparison = V,
+  facet_terms = rate,
+  split = list(RateV1 = c("rate", "V")),
+  sep = "_"
+) + 
+  coord_fixed(ratio = 1) + theme_minimal() +
+  scale_x_continuous("tongue position (mm)") +
+  scale_y_continuous("tongue height (mm)")
+```
+
+```{r pl01-stress, cache=TRUE}
+pl01_stress.gam <- polar_gam(
+  Y ~
+    StressV1 +
+    s(X) +
+    s(X, by = StressV1),
+  data = PL01
+)
+
+plot_polar_smooths(
+  pl01_stress.gam,
+  series = X,
+  comparison = V,
+  facet_terms = stress, 
+  split = list(StressV1 = c("stress", "V")),
+  sep = "_"
+) + 
+  coord_fixed(ratio = 1) + theme_minimal() +
+  scale_x_continuous("tongue position (mm)") +
+  scale_y_continuous("tongue height (mm)")
+```
+
+## Duration
 
 ```{r rate}
 means <- aggregate(duration ~  rate, midpoint_rotated, mean)
@@ -250,7 +255,9 @@ ggarrange(dur.rate, dur.stress, ncol = 2, nrow = 1)
 ggsave(file = "./figures/dur_descriptive.pdf", width = 6, height = 3)
 ```
 
-## Acoustic vowel plots
+## Vowel space
+
+### Acoustic vowel space
 
 ```{r acc}
 acc.vowel.plot.rate <- midpoint_rotated %>%
@@ -299,7 +306,7 @@ acc.stress <- acc.vowel.plot.stress %>%
     theme(plot.margin = unit(c(0,0, 0,0), "lines"))
 ```
 
-## Articulatory vowel space
+### Articulatory vowel space
 
 ```{r art}
 art.vowel.plot.rate <- midpoint_rotated %>%
@@ -350,7 +357,7 @@ art.stress <- art.vowel.plot.stress %>%
     theme(plot.margin = unit(c(0,0, 0,0), "lines"))
 ```
 
-## Save
+### Save
 
 ```{r save-acc-art}
 ggarrange(acc.rate, acc.stress, art.rate, art.stress, ncol = 2, nrow = 2)
@@ -358,7 +365,22 @@ ggarrange(acc.rate, acc.stress, art.rate, art.stress, ncol = 2, nrow = 2)
 ggsave(file = "./figures/descriptive.pdf", height = 6.5, width = 7)
 ```
 
-# Modelling
+# Inferential stats
+
+## VIF (multicollinearity)
+
+VIF values below 3 indicate absence of multicollinearity [@zuur2010].
+
+```{r vif}
+midpoint_rotated %>%
+  dplyr::select(duration, f1.z, f2.z, f0.z, rate, stress) %>%
+  mutate(
+    rate = as.numeric(rate) - 1.5,
+    stress = as.numeric(stress) - 1
+  ) %>%
+  as.data.frame(.) %>%
+  usdm::vif(.)
+```
 
 ## Duration
 
@@ -401,6 +423,11 @@ ef_dur %>%
 ggsave(file = "./figures/dur_ef.pdf", width = 6, height = 3)
 ```
 
+```{r dur-lmer-tab}
+tab_model(dur.lmer.full)
+```
+
+
 ## F1
 
 ```{r f1-lmer}
@@ -415,8 +442,6 @@ f1.lmer.full <- lmer(
     calc.derivs = FALSE,
     optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
 )
-
-summary(f1.lmer.full)
 ```
 
 ```{r ef-f1}
@@ -438,6 +463,10 @@ f1 <- ef1 %>%
 ggsave(file = "./figures/f1_ef.pdf", width = 6, height = 4)
 ```
 
+```{r f1-lmer-tab}
+tab_model(f1.lmer.full)
+```
+
 ## F2
 
 ```{r f2-lmer}
@@ -452,8 +481,6 @@ f2.lmer.full <- lmer(
     calc.derivs = FALSE,
     optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
 )
-
-summary(f2.lmer.full)
 ```
 
 ```{r ef-f2}
@@ -475,6 +502,10 @@ f2 <- ef2 %>%
 ggsave(file = "./figures/f2_ef.pdf", width = 6, height = 4)
 ```
 
+```{r f2-lmer-tab}
+tab_model(f2.lmer.full)
+```
+
 ## Z1
 
 ```{r z1-lmer}
@@ -489,8 +520,6 @@ z1.lmer.full <- lmer(
     calc.derivs = FALSE,
     optCtrl = list(method = "nlminb", starttests = F, kkt = FALSE))
 )
-
-summary(z1.lmer.full)
 ```
 
 ```{r ef-z1}
@@ -512,6 +541,10 @@ z1 <- ez1 %>%
 ggsave(file = "./figures/z1_ef.pdf", width = 6, height = 4)
 ```
 
+```{r z1-lmer-tab}
+tab_model(z1.lmer.full)
+```
+
 ## Z2
 
 ```{r z2-lmer}
@@ -526,8 +559,6 @@ z2.lmer.full <- lmer(
     calc.derivs = FALSE,
     optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
 )
-
-summary(z2.lmer.full)
 ```
 
 ```{r ef-z2}
@@ -548,6 +579,12 @@ z2 <- ez2 %>%
 
 ggsave(file = "./figures/z2_ef.pdf", width = 6, height = 4)
 ```
+
+```{r z2-lmer-tab}
+tab_model(z2.lmer.full)
+```
+
+## Composite plot
 
 ```{r f2-z2}
 ggarrange(f2 + theme(legend.position = "top"), z2 + theme(legend.position = "top"), ncol = 2)
@@ -590,7 +627,11 @@ eff0 %>%
 ggsave(file = "./figures/f0_ef.pdf", width = 6, height = 4)
 ```
 
-# F3
+```{r f0-lmer-tab}
+tab_model(f0.lmer.full)
+```
+
+## F3
 
 ```{r dur-f3}
 midpoint_rotated %>%
@@ -601,27 +642,5 @@ midpoint_rotated %>%
   facet_wrap(~V1) +
   theme_bw() +
   pl_theme
-```
-
-# R2
-
-```{r r2}
-r2(f2.lmer.full)
-r2(f1.lmer.full)
-r2(z2.lmer.full)
-r2(z1.lmer.full)
-```
-
-# VIF
-
-```{r vif}
-midpoint_rotated %>%
-  dplyr::select(duration, f1.z, f2.z, f0.z, rate, stress) %>%
-  mutate(
-    rate = as.numeric(rate) - 1.5,
-    stress = as.numeric(stress) - 1
-  ) %>%
-  as.data.frame(.) %>%
-  usdm::vif(.)
 ```
 

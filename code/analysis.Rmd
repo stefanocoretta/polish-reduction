@@ -27,6 +27,7 @@ pl_theme <- theme(
   axis.title = element_text(size = 12),
   strip.text = element_text(size = 14)
 )
+options(ggplot2.discrete.fill = c("#264653", "#e76f51"))
 ```
 
 # Prepare data
@@ -44,7 +45,11 @@ midpoint_rotated <- midpoint_rotated %>%
     item = factor(item),
     V1 = factor(V1, levels = c("a", "e", "i", "o", "u", "y")),
     frame = item,
-    duration.log = log(duration)
+    duration.log = log(duration),
+    z1 = as.numeric(z1),
+    z2 = as.numeric(z2),
+    f1.z = as.numeric(f1.z),
+    f2.z = as.numeric(f2.z)
   )
 
 levels(midpoint_rotated$frame) <- c(
@@ -192,14 +197,14 @@ pl01_rate.gam <- polar_gam(
 plot_polar_smooths(
   pl01_rate.gam,
   series = X,
-  comparison = V,
-  facet_terms = rate,
+  comparison = rate,
+  facet_terms = V,
   split = list(RateV1 = c("rate", "V")),
   sep = "_"
 ) + 
   coord_fixed(ratio = 1) + theme_minimal() +
-  scale_x_continuous("tongue position (mm)") +
-  scale_y_continuous("tongue height (mm)")
+  scale_x_continuous("Antero-posterior axis (mm)") +
+  scale_y_continuous("Vertical axis (mm)")
 ```
 
 ```{r pl01-stress, cache=TRUE}
@@ -214,14 +219,14 @@ pl01_stress.gam <- polar_gam(
 plot_polar_smooths(
   pl01_stress.gam,
   series = X,
-  comparison = V,
-  facet_terms = stress, 
+  comparison = stress,
+  facet_terms = V, 
   split = list(StressV1 = c("stress", "V")),
   sep = "_"
 ) + 
   coord_fixed(ratio = 1) + theme_minimal() +
-  scale_x_continuous("tongue position (mm)") +
-  scale_y_continuous("tongue height (mm)")
+  scale_x_continuous("Antero-posterior axis (mm)") +
+  scale_y_continuous("Vertical axis (mm)")
 ```
 
 ## Duration
@@ -394,7 +399,8 @@ dur.lmer.full <- lmer(
   control = lmerControl(
     optimizer = "optimx",
     calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
+    optCtrl = list(method = "bobyqa")
+  )
 )
 ```
 
@@ -402,25 +408,27 @@ dur.lmer.full <- lmer(
 ef_dur <- as.data.frame(effect("rate:V1:stress", dur.lmer.full)) %>%
   mutate(V1 = factor(V1, levels = c("a", "e", "i", "o", "u", "y")))
 
-pd = position_dodge(width = 0.5)
+pd = position_dodge(width = 0.6)
 
 ef_dur <- ef_dur %>%
   mutate(fit = exp(fit),
          lower = exp(lower),
          upper = exp(upper))
 
-ef_dur %>%
+dur <- ef_dur %>%
   ggplot() +
-    aes(V1, fit, color = stress) +
+    aes(V1, fit, color = stress, linetype = stress) +
     geom_point(position = pd) +
-    geom_errorbar(aes(ymin = lower, ymax = upper), position = pd) +
+    geom_errorbar(aes(ymin = lower, ymax = upper), position = pd, width = 0, size = 0.5) +
     theme_bw() +
     pl_theme +
     facet_wrap(~rate) +
-    scale_x_discrete("vowel") +
-    scale_y_continuous("duration (ms)")
+    scale_x_discrete("Vowel") +
+    scale_y_continuous("Duration (ms)") +
+    theme(legend.position = "top")
+dur
 
-ggsave(file = "./figures/dur_ef.pdf", width = 6, height = 3)
+ggsave(dur, file = "./figures/dur_ef.pdf", width = 7, height = 5)
 ```
 
 ```{r dur-lmer-tab}
@@ -440,7 +448,8 @@ f1.lmer.full <- lmer(
   control = lmerControl(
     optimizer = "optimx",
     calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
+    optCtrl = list(method = "bobyqa")
+  )
 )
 ```
 
@@ -451,16 +460,18 @@ ef1 <- as.data.frame(effect("V1:duration:stress", f1.lmer.full)) %>%
 f1 <- ef1 %>%
   ggplot() +
   aes(duration, fit, linetype = stress, fill = stress) +
-  geom_point(data = midpoint_rotated, aes(duration, f1.z, color = stress), alpha = 0.5) +
+  geom_point(data = midpoint_rotated, aes(duration, f1.z, color = stress), alpha = 0.2) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
   geom_line(aes( color = stress)) +
   facet_wrap(~V1) +
   scale_y_reverse("F1.z") +
   scale_x_continuous("duration (ms)") +
   theme_bw() +
-  pl_theme
+  pl_theme +
+  theme(legend.position = "top")
+f1
 
-ggsave(file = "./figures/f1_ef.pdf", width = 6, height = 4)
+ggsave(f1, file = "./figures/f1_ef.pdf", width = 7, height = 5)
 ```
 
 ```{r f1-lmer-tab}
@@ -479,7 +490,8 @@ f2.lmer.full <- lmer(
   control = lmerControl(
     optimizer = "optimx",
     calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
+    optCtrl = list(method = "bobyqa")
+  )
 )
 ```
 
@@ -490,16 +502,18 @@ ef2 <- as.data.frame(effect("V1:duration:stress", f2.lmer.full)) %>%
 f2 <- ef2 %>%
   ggplot() +
   aes(duration, fit, linetype = stress, fill = stress) +
-  geom_point(data = midpoint_rotated, aes(duration, f2.z, color = stress), alpha = 0.5) +
+  geom_point(data = midpoint_rotated, aes(duration, f2.z, color = stress), alpha = 0.2) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
   geom_line(aes( color = stress)) +
   facet_wrap(~V1) +
   scale_y_reverse("F2.z") +
   scale_x_continuous("duration (ms)") +
   theme_bw() +
-  pl_theme
+  pl_theme +
+  theme(legend.position = "top")
+f2
 
-ggsave(file = "./figures/f2_ef.pdf", width = 6, height = 4)
+ggsave(f2, file = "./figures/f2_ef.pdf", width = 7, height = 5)
 ```
 
 ```{r f2-lmer-tab}
@@ -518,7 +532,8 @@ z1.lmer.full <- lmer(
   control = lmerControl(
     optimizer = "optimx",
     calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = F, kkt = FALSE))
+    optCtrl = list(method = "bobyqa")
+  )
 )
 ```
 
@@ -529,16 +544,18 @@ ez1 <- as.data.frame(effect("V1:duration:stress", z1.lmer.full)) %>%
 z1 <- ez1 %>%
   ggplot() +
   aes(duration, fit, linetype = stress, fill = stress) +
-  geom_point(data = midpoint_rotated, aes(duration, z1, color = stress), alpha = 0.5) +
+  geom_point(data = midpoint_rotated, aes(duration, z1, color = stress), alpha = 0.2) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
   geom_line(aes( color = stress)) +
   facet_wrap(~V1) +
   scale_y_reverse("z1") +
   scale_x_continuous("duration (ms)") +
   theme_bw() +
-  pl_theme
+  pl_theme +
+  theme(legend.position = "top")
+z1
 
-ggsave(file = "./figures/z1_ef.pdf", width = 6, height = 4)
+ggsave(z1, file = "./figures/z1_ef.pdf", width = 7, height = 5)
 ```
 
 ```{r z1-lmer-tab}
@@ -557,7 +574,8 @@ z2.lmer.full <- lmer(
   control = lmerControl(
     optimizer = "optimx",
     calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
+    optCtrl = list(method = "bobyqa")
+  )
 )
 ```
 
@@ -568,16 +586,18 @@ ez2 <- as.data.frame(effect("V1:duration:stress", z2.lmer.full)) %>%
 z2 <- ez2 %>%
   ggplot() +
   aes(duration, fit, linetype = stress, fill = stress) +
-  geom_point(data = midpoint_rotated, aes(duration, z2, color = stress), alpha = 0.5) +
+  geom_point(data = midpoint_rotated, aes(duration, z2, color = stress), alpha = 0.2) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
   geom_line(aes( color = stress)) +
   facet_wrap(~V1) +
   scale_y_reverse("z2") +
   scale_x_continuous("duration (ms)") +
   theme_bw() +
-  pl_theme
+  pl_theme +
+  theme(legend.position = "top")
+z2
 
-ggsave(file = "./figures/z2_ef.pdf", width = 6, height = 4)
+ggsave(z2, file = "./figures/z2_ef.pdf", width = 7, height = 5)
 ```
 
 ```{r z2-lmer-tab}
@@ -602,7 +622,8 @@ f0.lmer.full <- lmer(
   control = lmerControl(
     optimizer = "optimx",
     calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
+    optCtrl = list(method = "bobyqa")
+  )
 )
 
 summary(f0.lmer.full)
@@ -624,7 +645,7 @@ eff0 %>%
   theme_bw() +
   pl_theme
 
-ggsave(file = "./figures/f0_ef.pdf", width = 6, height = 4)
+ggsave(file = "./figures/f0_ef.pdf", width = 7, height = 5)
 ```
 
 ```{r f0-lmer-tab}

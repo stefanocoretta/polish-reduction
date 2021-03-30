@@ -1,15 +1,19 @@
 ---
-title: "Analysis"
+title: "Supplement: *Distance vs. time. Articulatory and acoustic consequences of reduced vowel duration in Polish*"
+author: "Patrycja Strycharczuk, Małgorzata Ćavar, Stefano Coretta"
 output:
-  rmdformats::material:
-    use_bookdown: true
+  rmdformats::downcute:
+    toc_depth: 3
+    number_sections: yes
+    use_bookdown: yes
     fig_width: 7
     fig_height: 5
-    css: "style.css"
+bibliography: "`r here::here('./references.bib')`"
+cls: unified-style-sheet-for-linguistics.csl
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_knit$set(root.dir = here::here())
 library(usdm)
 library(tidyverse)
@@ -27,10 +31,10 @@ pl_theme <- theme(
   axis.title = element_text(size = 12),
   strip.text = element_text(size = 14)
 )
-options(ggplot2.discrete.fill = c("#264653", "#e76f51"))
+options(ggplot2.discrete.fill = list(c("#264653", "#e76f51"), c("#B09B37", "#955F47", "#A8B9CB")))
 ```
 
-# Prepare data
+# Overview
 
 ```{r read-data}
 midpoint_rotated <- readRDS("./data/derived/midpoint_rotated.rds")
@@ -44,6 +48,7 @@ midpoint_rotated <- midpoint_rotated %>%
     stress = factor(stress, levels = c("unstressed", "stressed")),
     item = factor(item),
     V1 = factor(V1, levels = c("a", "e", "i", "o", "u", "y")),
+    V1 = recode_factor(V1, i = "i", e = "e", y = "ɨ", a = "a", o = "o", u = "u"),
     frame = item,
     duration.log = log(duration),
     z1 = as.numeric(z1),
@@ -68,7 +73,23 @@ midpoint_long <- midpoint_long %>%
   )
 ```
 
+This supplementary document complements the paper *Distance vs. time. Articulatory and acoustic consequences of reduced vowel duration in Polish*.
+
+The following sections illustrate:
+
+1. The articulatory data normalisation procedure.
+2. Descriptive plots of the raw data.
+3. Code and plots of the linear regression models.
+4. Summaries of the models in 3.
+5. Extra analyses of F0 and F3.
+
+Only relevant R code is shown in this document.
+The full code can be inspected on the OSF repository at <https://osf.io/hy7nt/?view_only=d06775a2cb1d4786a0442b0f15d73296>, in the file `code/analysis.Rmd`.
+
 # Normalisation procedure
+
+This is Figure 1 from the paper, which illustrates the normalisation procedure.
+See paper for details.
 
 ```{r pl01}
 PL01 <- midpoint_long %>%
@@ -181,9 +202,12 @@ ggsave(file = "./figures/norm.pdf", width = 6)
 ```
 
 
-# Descriptive stats plots
+# Descriptive statistics plots
 
 ## Articulatory undershoot
+
+Tongue contours from ultrasound tongue imaging of speaker PL01.
+Tongue tip on the right.
 
 ```{r pl01-rate, cache=TRUE}
 pl01_rate.gam <- polar_gam(
@@ -204,7 +228,8 @@ plot_polar_smooths(
 ) + 
   coord_fixed(ratio = 1) + theme_minimal() +
   scale_x_continuous("Antero-posterior axis (mm)") +
-  scale_y_continuous("Vertical axis (mm)")
+  scale_y_continuous("Vertical axis (mm)") +
+  theme(legend.position = "top")
 ```
 
 ```{r pl01-stress, cache=TRUE}
@@ -226,39 +251,37 @@ plot_polar_smooths(
 ) + 
   coord_fixed(ratio = 1) + theme_minimal() +
   scale_x_continuous("Antero-posterior axis (mm)") +
-  scale_y_continuous("Vertical axis (mm)")
+  scale_y_continuous("Vertical axis (mm)") +
+  theme(legend.position = "top")
 ```
 
 ## Duration
 
-```{r rate}
-means <- aggregate(duration ~  rate, midpoint_rotated, mean)
-means$duration <- round(means$duration, 2)
+Figure 2 from the paper with boxplots and means of vowel duration depending on speech rate and stress.
 
-dur.rate <- ggboxplot(midpoint_rotated, x = "rate", y = "duration") +
-  scale_y_continuous("duration (ms)") +
-  scale_x_discrete("rate") +
+```{r stress-rate}
+dur.sum <- midpoint_rotated %>%
+  select(rate, stress, duration) %>%
+  group_by(rate, stress) %>%
+  summarise(
+    mean.dur = round(mean(duration),1),
+    median.dur = round(median(duration),1),
+    .groups = "drop"
+  )
+
+dur.stress.rate <- ggboxplot(midpoint_rotated, x = "stress", y = "duration") +
+  scale_y_continuous('duration (ms)') +
+  scale_x_discrete('rate') +
   stat_summary(fun = mean, geom = "point", size = 1) +
-  geom_text(data = means, aes(label = duration, y = duration + 5), size = 3) +
-  theme(text = element_text(size = 10))
-```
-
-```{r stress}
-means <- aggregate(duration ~  stress, midpoint_rotated, mean)
-means$duration = round(means$duration, 2)
-
-dur.stress <- ggboxplot(midpoint_rotated, x = "stress", y = "duration") +
-  scale_y_continuous("duration (ms)") +
-  scale_x_discrete("stress") +
-  stat_summary(fun = mean, geom = "point", size = 1) +
-  geom_text(data = means, aes(label = duration, y = duration + 5), size = 3) +
-  theme(text = element_text(size = 10))
+  geom_text(data = dur.sum, aes(label = mean.dur, y = median.dur + 5), size = 3) +
+  facet_wrap(~rate) +
+  theme(text = element_text(size = 10), axis.title.x = element_blank())
 ```
 
 ```{r save-rate-stress}
-ggarrange(dur.rate, dur.stress, ncol = 2, nrow = 1)
-ggsave(file = "./figures/dur_descriptive.pdf", width = 6, height = 3)
+ggsave(dur.stress.rate, file = "./figures/dur_descriptive.pdf", width = 6, height = 3, device = cairo_pdf)
 ```
+
 
 ## Vowel space
 
@@ -370,11 +393,12 @@ ggarrange(acc.rate, acc.stress, art.rate, art.stress, ncol = 2, nrow = 2)
 ggsave(file = "./figures/descriptive.pdf", height = 6.5, width = 7)
 ```
 
-# Inferential stats
+# Inferential statistics
 
 ## VIF (multicollinearity)
 
 VIF values below 3 indicate absence of multicollinearity [@zuur2010].
+For all predictors, VIF < 3.
 
 ```{r vif}
 midpoint_rotated %>%
@@ -431,9 +455,7 @@ dur
 ggsave(dur, file = "./figures/dur_ef.pdf", width = 7, height = 5)
 ```
 
-```{r dur-lmer-tab}
-tab_model(dur.lmer.full)
-```
+
 
 
 ## F1
@@ -474,10 +496,6 @@ f1
 ggsave(f1, file = "./figures/f1_ef.pdf", width = 7, height = 5)
 ```
 
-```{r f1-lmer-tab}
-tab_model(f1.lmer.full)
-```
-
 ## F2
 
 ```{r f2-lmer}
@@ -516,9 +534,6 @@ f2
 ggsave(f2, file = "./figures/f2_ef.pdf", width = 7, height = 5)
 ```
 
-```{r f2-lmer-tab}
-tab_model(f2.lmer.full)
-```
 
 ## Z1
 
@@ -558,9 +573,7 @@ z1
 ggsave(z1, file = "./figures/z1_ef.pdf", width = 7, height = 5)
 ```
 
-```{r z1-lmer-tab}
-tab_model(z1.lmer.full)
-```
+
 
 ## Z2
 
@@ -600,15 +613,48 @@ z2
 ggsave(z2, file = "./figures/z2_ef.pdf", width = 7, height = 5)
 ```
 
-```{r z2-lmer-tab}
-tab_model(z2.lmer.full)
-```
+
 
 ## Composite plot
 
 ```{r f2-z2}
 ggarrange(f2 + theme(legend.position = "top"), z2 + theme(legend.position = "top"), ncol = 2)
 ```
+
+
+# Model summaries
+
+## Duration
+
+```{r dur-lmer-tab}
+tab_model(dur.lmer.full)
+```
+
+## F1
+
+```{r f1-lmer-tab}
+tab_model(f1.lmer.full)
+```
+
+## F2
+
+```{r f2-lmer-tab}
+tab_model(f2.lmer.full)
+```
+
+## Z1
+
+```{r z1-lmer-tab}
+tab_model(z1.lmer.full)
+```
+
+## Z2
+
+```{r z2-lmer-tab}
+tab_model(z2.lmer.full)
+```
+
+# Further exploratory analyses
 
 ## F0
 
@@ -663,5 +709,11 @@ midpoint_rotated %>%
   facet_wrap(~V1) +
   theme_bw() +
   pl_theme
+```
+
+# Session info
+
+```{r sess-info}
+devtools::session_info()
 ```
 

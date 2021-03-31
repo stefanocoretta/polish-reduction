@@ -20,41 +20,42 @@ library(tidyverse)
 library(rticulate)
 library(ggpubr)
 library(ggrepel)
+library(patchwork)
 library(lme4)
 library(optimx)
 library(performance)
 library(effects)
 library(sjPlot)
-pl_theme <- theme(
-  axis.text = element_text(size = 14),
-  axis.text.x = element_text(size = 12),
-  axis.title = element_text(size = 12),
-  strip.text = element_text(size = 14)
+theme_set(theme_minimal(base_family = "Lato"))
+options(
+  ggplot2.discrete.fill = list(
+    # 2 cols
+    c("#264653", "#e76f51"),
+    # 3 cols
+    c("#B09B37", "#955F47", "#A8B9CB"),
+    # 6 cols
+    c("#7ACCD7", "#115896", "#7C6C65", "#4C4C53", "#BA2F00", "#21282F")
+  )
 )
-options(ggplot2.discrete.fill = list(c("#264653", "#e76f51"), c("#B09B37", "#955F47", "#A8B9CB")))
 ```
 
 # Overview
 
-```{r read-data}
-midpoint_rotated <- readRDS("./data/derived/midpoint_rotated.rds")
-midpoint_long <- readRDS("./data/derived/midpoint_long.rds")
-```
-
 ```{r prep-data}
-midpoint_rotated <- midpoint_rotated %>%
+midpoint_rotated <- readRDS("./data/derived/midpoint_rotated.rds") %>%
   mutate(
     rate = factor(rate, levels = c("fast", "normal", "slow")),
     stress = factor(stress, levels = c("unstressed", "stressed")),
     item = factor(item),
-    V1 = factor(V1, levels = c("a", "e", "i", "o", "u", "y")),
-    V1 = recode_factor(V1, i = "i", e = "e", y = "ɨ", a = "a", o = "o", u = "u"),
+    V1 = str_replace(V1, "y", "ɨ"),
+    V1 = factor(V1, levels = c("a", "e", "i", "o", "u", "ɨ")),
     frame = item,
     duration.log = log(duration),
     z1 = as.numeric(z1),
     z2 = as.numeric(z2),
     f1.z = as.numeric(f1.z),
-    f2.z = as.numeric(f2.z)
+    f2.z = as.numeric(f2.z),
+    f0.z = as.numeric(f0.z)
   )
 
 levels(midpoint_rotated$frame) <- c(
@@ -66,10 +67,12 @@ levels(midpoint_rotated$frame) <- c(
 
 contrasts(midpoint_rotated$V1) <- "contr.sum"
 
-midpoint_long <- midpoint_long %>%
+midpoint_long <- readRDS("./data/derived/midpoint_long.rds") %>%
   mutate(
     rate = factor(rate, levels = c("fast", "normal", "slow")),
-    stress = factor(stress, levels = c("unstressed", "stressed"))
+    stress = factor(stress, levels = c("unstressed", "stressed")),
+    V1 = factor(V1, levels = c("a", "e", "i", "o", "u", "y")),
+    V1 = recode_factor(V1, i = "i", e = "e", y = "ɨ", a = "a", o = "o", u = "u")
   )
 ```
 
@@ -100,8 +103,7 @@ PL01 <- midpoint_long %>%
   ) %>%
   mutate(
     RateV1 = interaction(rate, V1, sep = "_"),
-    StressV1 = interaction(stress, V1, sep = "_"),
-    V1 = factor(V1)
+    StressV1 = interaction(stress, V1, sep = "_")
   ) 
 ```
 
@@ -114,17 +116,15 @@ pl01.gam <- polar_gam(
   data = PL01
 )
 
-PL01.smooths.plot <- plot_polar_smooths(
-  pl01.gam, series = X, comparison = V1
-  ) +
+PL01.smooths.plot <- predict_polar_gam(pl01.gam) %>%
+  mutate(V1 = factor(V1, levels = c("a", "e", "i", "o", "u", "ɨ"))) %>%
+  ggplot(aes(X, Y, colour = V1, linetype = V1)) +
+  geom_path() +
   coord_fixed(ratio = 1) + 
-  theme_minimal() +
-  theme(legend.title = element_blank(),
-        text = element_text(size = 6),
-        legend.key.size = unit(0.6, "lines")) +
   ggtitle("Tongue contours") +
-  scale_x_continuous("tongue position (mm)") +
-  scale_y_continuous("tongue height (mm)")
+  scale_x_reverse("tongue backness (mm)") +
+  scale_y_continuous("tongue height (mm)") +
+  theme(legend.title = element_blank())
 ```
 
 ```{r sum-pl01}
@@ -141,64 +141,51 @@ sum_PL01 <- midpoint_rotated %>%
   )
 
 PL01.PCA.plot <- sum_PL01 %>%
-  mutate(V1 = factor(V1, levels = c("i", "e", "y", "a", "o", "u"))) %>%
-  arrange(V1) %>%
+  mutate(V12 = factor(V1, levels = c("i", "e", "ɨ", "a", "o", "u"))) %>%
+  arrange(V12) %>%
   ggplot() +
     aes(PC1, PC2, label = V1) +
     geom_polygon(color = "black", fill = NA, size = 0.25, linetype = "dashed") +
-    geom_text(size = 2.5) +
+    geom_label(aes(fill = V1), colour = "white") +
     scale_x_reverse("PC1") +
-    scale_y_reverse("PC2") +
-    scale_fill_grey() +
-    theme_minimal() +
+    scale_y_reverse("PC2", limits = c(5.5, -4)) +
     coord_fixed() + 
-    theme(legend.position = "bottom",
-        text = element_text(size = 6),
-        legend.title = element_blank()) +
+    theme(
+      legend.position = "none"
+    ) +
     ggtitle("PCA results")
 
 PL01.rot.plot <- sum_PL01 %>%
-  mutate(V1 = factor(V1, levels = c("i", "e", "y", "a", "o", "u"))) %>%
-  arrange(V1) %>%
+  mutate(V12 = factor(V1, levels = c("i", "e", "ɨ", "a", "o", "u"))) %>%
+  arrange(V12) %>%
   ggplot() +
     aes(z2, z1, label = V1) +
     geom_polygon(color = "black", fill = NA, size = 0.25, linetype = "dashed") +
-    geom_text(size = 2.5) +
+    geom_label(aes(fill = V1), colour = "white") +
     scale_x_reverse("z2") +
-    scale_y_reverse("z1") +
-    scale_fill_grey() +
-    theme_minimal() +
+    scale_y_reverse("z1", limits = c(1, -1.25)) +
     coord_fixed() + 
-    theme(legend.position = "bottom",
-          text = element_text(size = 6),
-          legend.title = element_blank()) +
+    theme(legend.position = "none") +
     ggtitle("Normalised articulatory space")
 
 PL01.acc.plot <- sum_PL01 %>%
-  mutate(V1 = factor(V1, levels = c("i", "e", "a", "o", "u", "y"))) %>%
-  arrange(V1) %>%
+  mutate(V12 = factor(V1, levels = c("i", "e", "a", "o", "u", "ɨ"))) %>%
+  arrange(V12) %>%
   ggplot() +
     aes(f2.z, f1.z, label = V1) +
     geom_polygon(color = "black", fill = NA, size = 0.25, linetype = "dashed") +
-    geom_text(size = 2.5) +
-    scale_x_reverse("F2.z") +
-    scale_y_reverse("F1.z") +
-    scale_fill_grey() +
-    theme_minimal() +
+    geom_label(aes(fill = V1), colour = "white") +
+    scale_x_reverse("F2.z", limits = c(2, -2)) +
+    scale_y_reverse("F1.z", limits = c(2, -1.5)) +
     coord_fixed() + 
-    theme(legend.position = "bottom",
-          text = element_text(size = 6),
-          legend.title = element_blank()) +
+    theme(legend.position = "none") +
     ggtitle("Normalised acoustic space")
 ```
 
 ```{r save-norm}
-ggarrange(
-  PL01.smooths.plot, PL01.PCA.plot, PL01.rot.plot, PL01.acc.plot,
-  ncol = 2, nrow = 2
-)
+PL01.smooths.plot + PL01.PCA.plot + PL01.rot.plot + PL01.acc.plot
 
-ggsave(file = "./figures/norm.pdf", width = 6)
+ggsave(file = "./figures/Figure1.pdf", width = 7, height = 5, device = cairo_pdf)
 ```
 
 
@@ -226,7 +213,7 @@ plot_polar_smooths(
   split = list(RateV1 = c("rate", "V")),
   sep = "_"
 ) + 
-  coord_fixed(ratio = 1) + theme_minimal() +
+  coord_fixed(ratio = 1) +
   scale_x_continuous("Antero-posterior axis (mm)") +
   scale_y_continuous("Vertical axis (mm)") +
   theme(legend.position = "top")
@@ -249,7 +236,7 @@ plot_polar_smooths(
   split = list(StressV1 = c("stress", "V")),
   sep = "_"
 ) + 
-  coord_fixed(ratio = 1) + theme_minimal() +
+  coord_fixed(ratio = 1) +
   scale_x_continuous("Antero-posterior axis (mm)") +
   scale_y_continuous("Vertical axis (mm)") +
   theme(legend.position = "top")
@@ -275,11 +262,11 @@ dur.stress.rate <- ggboxplot(midpoint_rotated, x = "stress", y = "duration") +
   stat_summary(fun = mean, geom = "point", size = 1) +
   geom_text(data = dur.sum, aes(label = mean.dur, y = median.dur + 5), size = 3) +
   facet_wrap(~rate) +
-  theme(text = element_text(size = 10), axis.title.x = element_blank())
+  theme(axis.title.x = element_blank())
 ```
 
 ```{r save-rate-stress}
-ggsave(dur.stress.rate, file = "./figures/dur_descriptive.pdf", width = 6, height = 3, device = cairo_pdf)
+ggsave(dur.stress.rate, file = "./figures/Figure2.pdf", width = 6, height = 3, device = cairo_pdf)
 ```
 
 
@@ -291,11 +278,11 @@ ggsave(dur.stress.rate, file = "./figures/dur_descriptive.pdf", width = 6, heigh
 acc.vowel.plot.rate <- midpoint_rotated %>%
   group_by(V1, rate) %>%
   summarise(mean.f1 = mean(f1.z, na.rm = T),
-            mean.f2 = mean(f2.z, na.rm = T)) %>%
+            mean.f2 = mean(f2.z, na.rm = T),
+            .groups = "drop") %>%
   ungroup %>%
-  mutate(V1 = factor(V1, levels = c("i", "e", "a", "o", "u", "y")),
-         rate = factor(rate, levels = c("normal", "slow", "fast"))) %>%
-  arrange(rate,V1)
+  mutate(V1 = factor(V1, levels = c("i", "e", "a", "o", "u", "ɨ"))) %>%
+  arrange(rate, V1)
 
 acc.rate <- acc.vowel.plot.rate %>%
   ggplot() +
@@ -306,7 +293,7 @@ acc.rate <- acc.vowel.plot.rate %>%
     scale_fill_grey() +
     theme_minimal() +
     geom_point() +
-    geom_text_repel(size = 4) +
+    geom_text_repel() +
     theme(legend.position = "bottom",
           legend.title = element_blank()) +
     theme(plot.margin = unit(c(0,0, 0,0), "lines"))
@@ -314,9 +301,10 @@ acc.rate <- acc.vowel.plot.rate %>%
 acc.vowel.plot.stress <- midpoint_rotated %>%
   group_by(V1, stress) %>%
   summarise(mean.f1 = mean(f1.z, na.rm = T),
-            mean.f2 = mean(f2.z, na.rm = T)) %>%
+            mean.f2 = mean(f2.z, na.rm = T),
+            .groups = "drop") %>%
   ungroup %>%
-  mutate(V1 = factor(V1, levels = c("i", "e", "a", "o", "u", "y"))) %>%
+  mutate(V1 = factor(V1, levels = c("i", "e", "a", "o", "u", "ɨ"))) %>%
   arrange(stress, V1)
 
 acc.stress <- acc.vowel.plot.stress %>%
@@ -340,10 +328,11 @@ acc.stress <- acc.vowel.plot.stress %>%
 art.vowel.plot.rate <- midpoint_rotated %>%
   group_by(V1, rate) %>%
   summarise(mean.comp1 = mean(z1, na.rm = T),
-            mean.comp2 = mean(z2, na.rm = T)) %>%
+            mean.comp2 = mean(z2, na.rm = T),
+            .groups = "drop") %>%
   ungroup %>%
   mutate(
-    V1 = factor(V1, levels = c("i", "y", "e", "a", "o", "u")),
+    V1 = factor(V1, levels = c("i", "ɨ", "e", "a", "o", "u")),
     rate = factor(rate, levels = c("normal", "slow", "fast"))
   ) %>%
   arrange(rate,V1)
@@ -365,9 +354,10 @@ art.rate <- art.vowel.plot.rate %>%
 art.vowel.plot.stress <- midpoint_rotated %>%
   group_by(V1, stress) %>%
   summarise(mean.comp1 = mean(z1, na.rm = T),
-            mean.comp2 = mean(z2,na.rm = T)) %>%
+            mean.comp2 = mean(z2,na.rm = T),
+            .groups = "drop") %>%
   ungroup %>%
-  mutate(V1 = factor(V1, levels = c("i", "y", "e", "a", "o", "u"))) %>%
+  mutate(V1 = factor(V1, levels = c("i", "ɨ", "e", "a", "o", "u"))) %>%
   arrange(stress, V1)
 
 art.stress <- art.vowel.plot.stress %>%
@@ -388,9 +378,9 @@ art.stress <- art.vowel.plot.stress %>%
 ### Save
 
 ```{r save-acc-art}
-ggarrange(acc.rate, acc.stress, art.rate, art.stress, ncol = 2, nrow = 2)
+acc.rate + acc.stress + art.rate + art.stress
 
-ggsave(file = "./figures/descriptive.pdf", height = 6.5, width = 7)
+ggsave(file = "./figures/Figure3.pdf", height = 6.5, width = 7, device = cairo_pdf)
 ```
 
 # Inferential statistics
@@ -429,8 +419,7 @@ dur.lmer.full <- lmer(
 ```
 
 ```{r ef-dur}
-ef_dur <- as.data.frame(effect("rate:V1:stress", dur.lmer.full)) %>%
-  mutate(V1 = factor(V1, levels = c("a", "e", "i", "o", "u", "y")))
+ef_dur <- as.data.frame(effect("rate:V1:stress", dur.lmer.full))
 
 pd = position_dodge(width = 0.6)
 
@@ -444,15 +433,13 @@ dur <- ef_dur %>%
     aes(V1, fit, color = stress, linetype = stress) +
     geom_point(position = pd) +
     geom_errorbar(aes(ymin = lower, ymax = upper), position = pd, width = 0, size = 0.5) +
-    theme_bw() +
-    pl_theme +
     facet_wrap(~rate) +
     scale_x_discrete("Vowel") +
     scale_y_continuous("Duration (ms)") +
     theme(legend.position = "top")
 dur
 
-ggsave(dur, file = "./figures/dur_ef.pdf", width = 7, height = 5)
+ggsave(dur, file = "./figures/Figure4.pdf", width = 7, height = 5, device = cairo_pdf)
 ```
 
 
@@ -477,7 +464,7 @@ f1.lmer.full <- lmer(
 
 ```{r ef-f1}
 ef1 <- as.data.frame(effect("V1:duration:stress", f1.lmer.full)) %>%
-  mutate(V1 = factor(V1, levels = c("i", "y", "u", "e", "a", "o")))
+  mutate(V1 = factor(V1, levels = c("i", "ɨ", "u", "e", "a", "o")))
 
 f1 <- ef1 %>%
   ggplot() +
@@ -488,12 +475,10 @@ f1 <- ef1 %>%
   facet_wrap(~V1) +
   scale_y_reverse("F1.z") +
   scale_x_continuous("duration (ms)") +
-  theme_bw() +
-  pl_theme +
   theme(legend.position = "top")
 f1
 
-ggsave(f1, file = "./figures/f1_ef.pdf", width = 7, height = 5)
+ggsave(f1, file = "./figures/Figure5.pdf", width = 7, height = 5, device = cairo_pdf)
 ```
 
 ## F2
@@ -515,7 +500,7 @@ f2.lmer.full <- lmer(
 
 ```{r ef-f2}
 ef2 <- as.data.frame(effect("V1:duration:stress", f2.lmer.full)) %>%
-  mutate(V1 = factor(V1, levels = c("i", "y", "u", "e", "a", "o")))
+  mutate(V1 = factor(V1, levels = c("i", "ɨ", "u", "e", "a", "o")))
 
 f2 <- ef2 %>%
   ggplot() +
@@ -526,12 +511,10 @@ f2 <- ef2 %>%
   facet_wrap(~V1) +
   scale_y_reverse("F2.z") +
   scale_x_continuous("duration (ms)") +
-  theme_bw() +
-  pl_theme +
   theme(legend.position = "top")
 f2
 
-ggsave(f2, file = "./figures/f2_ef.pdf", width = 7, height = 5)
+ggsave(f2, file = "./figures/Figure6.pdf", width = 7, height = 5, device = cairo_pdf)
 ```
 
 
@@ -554,7 +537,7 @@ z1.lmer.full <- lmer(
 
 ```{r ef-z1}
 ez1 <- as.data.frame(effect("V1:duration:stress", z1.lmer.full)) %>%
-  mutate(V1 = factor(V1, levels = c("i", "y", "u", "e", "a", "o")))
+  mutate(V1 = factor(V1, levels = c("i", "ɨ", "u", "e", "a", "o")))
 
 z1 <- ez1 %>%
   ggplot() +
@@ -565,12 +548,10 @@ z1 <- ez1 %>%
   facet_wrap(~V1) +
   scale_y_reverse("z1") +
   scale_x_continuous("duration (ms)") +
-  theme_bw() +
-  pl_theme +
   theme(legend.position = "top")
 z1
 
-ggsave(z1, file = "./figures/z1_ef.pdf", width = 7, height = 5)
+ggsave(z1, file = "./figures/Figure7.pdf", width = 7, height = 5, device = cairo_pdf)
 ```
 
 
@@ -594,7 +575,7 @@ z2.lmer.full <- lmer(
 
 ```{r ef-z2}
 ez2 <- as.data.frame(effect("V1:duration:stress", z2.lmer.full)) %>%
-  mutate(V1 = factor(V1, levels = c("i", "y", "u", "e", "a", "o")))
+  mutate(V1 = factor(V1, levels = c("i", "ɨ", "u", "e", "a", "o")))
 
 z2 <- ez2 %>%
   ggplot() +
@@ -605,12 +586,10 @@ z2 <- ez2 %>%
   facet_wrap(~V1) +
   scale_y_reverse("z2") +
   scale_x_continuous("duration (ms)") +
-  theme_bw() +
-  pl_theme +
   theme(legend.position = "top")
 z2
 
-ggsave(z2, file = "./figures/z2_ef.pdf", width = 7, height = 5)
+ggsave(z2, file = "./figures/Figure8.pdf", width = 7, height = 5, device = cairo_pdf)
 ```
 
 
@@ -618,7 +597,7 @@ ggsave(z2, file = "./figures/z2_ef.pdf", width = 7, height = 5)
 ## Composite plot
 
 ```{r f2-z2}
-ggarrange(f2 + theme(legend.position = "top"), z2 + theme(legend.position = "top"), ncol = 2)
+f2 + theme(legend.position = "top") + z2 + theme(legend.position = "top")
 ```
 
 
@@ -671,13 +650,10 @@ f0.lmer.full <- lmer(
     optCtrl = list(method = "bobyqa")
   )
 )
-
-summary(f0.lmer.full)
 ```
 
 ```{r ef-f0}
-eff0 <- as.data.frame(effect("V1:duration:stress", f0.lmer.full)) %>%
-  mutate(V1 = factor(V1, levels = c("i", "y", "u", "e", "a", "o")))
+eff0 <- as.data.frame(effect("V1:duration:stress", f0.lmer.full))
 
 eff0 %>%
   ggplot() +
@@ -687,11 +663,9 @@ eff0 %>%
   geom_line(aes(color = stress)) +
   facet_wrap(~V1) +
   scale_y_reverse("f0.z") +
-  scale_x_continuous("duration (ms)") +
-  theme_bw() +
-  pl_theme
+  scale_x_continuous("duration (ms)")
 
-ggsave(file = "./figures/f0_ef.pdf", width = 7, height = 5)
+ggsave(file = "./figures/Figure9.pdf", width = 7, height = 5, device = cairo_pdf)
 ```
 
 ```{r f0-lmer-tab}
@@ -704,11 +678,9 @@ tab_model(f0.lmer.full)
 midpoint_rotated %>%
   ggplot() +
   aes(duration, f3, linetype = stress, fill = stress) +
-  geom_point(alpha = 0.5) +
+  geom_point(alpha = 0.2) +
   geom_smooth(method = "lm") +
-  facet_wrap(~V1) +
-  theme_bw() +
-  pl_theme
+  facet_wrap(~V1)
 ```
 
 # Session info

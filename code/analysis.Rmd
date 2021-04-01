@@ -22,6 +22,7 @@ library(ggpubr)
 library(ggrepel)
 library(patchwork)
 library(lme4)
+library(lmerTest)
 library(optimx)
 library(performance)
 library(effects)
@@ -419,14 +420,29 @@ dur.lmer.full <- lmer(
 ```
 
 ```{r ef-dur}
+ef_dur_1 <- as.data.frame(effect("rate:stress", dur.lmer.full))
 ef_dur <- as.data.frame(effect("rate:V1:stress", dur.lmer.full))
 
-pd = position_dodge(width = 0.6)
+pd = position_dodge(width = 0.8)
+
+ef_dur_1 <- ef_dur_1 %>%
+  mutate(fit = exp(fit),
+         lower = exp(lower),
+         upper = exp(upper))
 
 ef_dur <- ef_dur %>%
   mutate(fit = exp(fit),
          lower = exp(lower),
          upper = exp(upper))
+
+dur_1 <- ef_dur_1 %>%
+  ggplot() +
+    aes(1, fit, color = stress, linetype = stress) +
+    geom_point(position = pd) +
+    geom_errorbar(aes(ymin = lower, ymax = upper), position = pd, width = 0, size = 0.5) +
+    facet_wrap(~rate) +
+    scale_x_discrete("Rate") +
+    scale_y_continuous("Duration (ms)")
 
 dur <- ef_dur %>%
   ggplot() +
@@ -435,13 +451,29 @@ dur <- ef_dur %>%
     geom_errorbar(aes(ymin = lower, ymax = upper), position = pd, width = 0, size = 0.5) +
     facet_wrap(~rate) +
     scale_x_discrete("Vowel") +
-    scale_y_continuous("Duration (ms)") +
-    theme(legend.position = "top")
-dur
+    scale_y_continuous("Duration (ms)")
 
-ggsave(dur, file = "./figures/Figure4.pdf", width = 7, height = 5, device = cairo_pdf)
+durdur <- dur_1 + dur + plot_layout(ncol = 2, widths = c(0.3, 0.7), guides = "collect") &
+  theme(legend.position = "top")
+
+ggsave(durdur, file = "./figures/Figure4.pdf", width = 7, height = 4, device = cairo_pdf)
 ```
 
+```{r dur-anova}
+dur.lmer2=lmer(duration.log ~ (rate+stress|speaker)+(1|frame)+rate*(V1+stress), data=midpoint_rotated,
+                   control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                       optCtrl = list(method = "bobyqa")))
+
+
+
+dur.lmer3=lmer(duration.log ~ (rate+stress|speaker)+(1|frame)+rate*V1+stress, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+anova(dur.lmer.full, dur.lmer2, dur.lmer3)
+
+```
 
 
 
@@ -481,6 +513,42 @@ f1
 ggsave(f1, file = "./figures/Figure5.pdf", width = 7, height = 5, device = cairo_pdf)
 ```
 
+```{r f1-anova}
+f1.lmer.2=lmer(f1.z ~ (1+stress|speaker)+(1|frame)+V1*duration+V1*stress, data=midpoint_rotated,
+                  control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                  optCtrl = list(method = "bobyqa")))
+
+
+f1.lmer.3=lmer(f1.z ~ (1+stress|speaker)+(1|frame)+V1*duration+stress, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+f1.lmer.4=lmer(f1.z ~ (1+stress|speaker)+(1|frame)+V1*duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+f1.lmer.5=lmer(f1.z ~ (1+stress|speaker)+(1|frame)+V1+duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+f1.lmer.6=lmer(f1.z ~ (1+stress|speaker)+(1|frame)+V1, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+f1.lmer.7=lmer(f1.z ~ (1+stress|speaker)+(1|frame)+duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+
+
+anova(f1.lmer.full, f1.lmer.2, f1.lmer.3, f1.lmer.4, f1.lmer.5, f1.lmer.6, f1.lmer.7)
+```
+
+
 ## F2
 
 ```{r f2-lmer}
@@ -515,6 +583,40 @@ f2 <- ef2 %>%
 f2
 
 ggsave(f2, file = "./figures/Figure6.pdf", width = 7, height = 5, device = cairo_pdf)
+```
+
+```{r f2-anova}
+f2.lmer.2=lmer(f2.z ~ (1+stress|speaker)+(1|frame)+V1*duration+V1*stress, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+f2.lmer.3=lmer(f2.z ~ (1+stress|speaker)+(1|frame)+V1*duration+stress, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+f2.lmer.4=lmer(f2.z ~ (1+stress|speaker)+(1|frame)+V1*duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+f2.lmer.5=lmer(f2.z ~ (1+stress|speaker)+(1|frame)+V1+duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+f2.lmer.6=lmer(f2.z ~ (1+stress|speaker)+(1|frame)+V1, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+f2.lmer.7=lmer(f2.z ~ (1+stress|speaker)+(1|frame)+duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+
+anova(f2.lmer.full, f2.lmer.2, f2.lmer.3, f2.lmer.4, f2.lmer.5, f2.lmer.6, f2.lmer.7)
 ```
 
 
@@ -554,6 +656,40 @@ z1
 ggsave(z1, file = "./figures/Figure7.pdf", width = 7, height = 5, device = cairo_pdf)
 ```
 
+```{r z1-anova}
+z1.lmer.2=lmer(z1 ~ (1+stress|speaker)+(1|frame)+V1*duration+V1*stress, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+z1.lmer.3=lmer(z1 ~ (1+stress|speaker)+(1|frame)+V1*duration+stress, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+z1.lmer.4=lmer(z1 ~ (1+stress|speaker)+(1|frame)+V1*duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+z1.lmer.5=lmer(z1 ~ (1+stress|speaker)+(1|frame)+V1+duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+z1.lmer.6=lmer(z1 ~ (1+stress|speaker)+(1|frame)+V1, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+z1.lmer.7=lmer(z1 ~ (1+stress|speaker)+(1|frame)+duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+
+anova(z1.lmer.full, z1.lmer.2, z1.lmer.3, z1.lmer.4, z1.lmer.5, z1.lmer.6, z1.lmer.7)
+
+```
 
 
 ## Z2
@@ -592,6 +728,31 @@ z2
 ggsave(z2, file = "./figures/Figure8.pdf", width = 7, height = 5, device = cairo_pdf)
 ```
 
+```{r z2-anova}
+z2.lmer.2=lmer(z2 ~ (1+stress|speaker)+(1|frame)+V1*duration+V1*stress, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+z2.lmer.3=lmer(z2 ~ (1+stress|speaker)+(1|frame)+V1*duration+stress, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+z2.lmer.4=lmer(z2 ~ (1+stress|speaker)+(1|frame)+V1*duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+z2.lmer.5=lmer(z2 ~ (1+stress|speaker)+(1|frame)+V1+duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+z2.lmer.6=lmer(z2 ~ (1+stress|speaker)+(1|frame)+V1, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+```
 
 
 ## Composite plot
@@ -606,31 +767,31 @@ f2 + theme(legend.position = "top") + z2 + theme(legend.position = "top")
 ## Duration
 
 ```{r dur-lmer-tab}
-tab_model(dur.lmer.full)
+tab_model(dur.lmer.full, digits = 4, digits.p = 5, digits.re = 4)
 ```
 
 ## F1
 
 ```{r f1-lmer-tab}
-tab_model(f1.lmer.full)
+tab_model(f1.lmer.full, digits = 4, digits.p = 5, digits.re = 4)
 ```
 
 ## F2
 
 ```{r f2-lmer-tab}
-tab_model(f2.lmer.full)
+tab_model(f2.lmer.full, digits = 4, digits.p = 5, digits.re = 4)
 ```
 
 ## Z1
 
 ```{r z1-lmer-tab}
-tab_model(z1.lmer.full)
+tab_model(z1.lmer.full, digits = 4, digits.p = 5, digits.re = 4)
 ```
 
 ## Z2
 
 ```{r z2-lmer-tab}
-tab_model(z2.lmer.full)
+tab_model(z2.lmer.full, digits = 4, digits.p = 5, digits.re = 4)
 ```
 
 # Further exploratory analyses

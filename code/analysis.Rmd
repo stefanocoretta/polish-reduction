@@ -123,8 +123,8 @@ PL01.smooths.plot <- predict_polar_gam(pl01.gam) %>%
   geom_path() +
   coord_fixed(ratio = 1) + 
   ggtitle("Tongue contours") +
-  scale_x_reverse("tongue backness (mm)") +
-  scale_y_continuous("tongue height (mm)") +
+  scale_x_reverse("Tongue backness (mm)") +
+  scale_y_continuous("Tongue height (mm)") +
   theme(legend.title = element_blank())
 ```
 
@@ -167,7 +167,7 @@ PL01.rot.plot <- sum_PL01 %>%
     scale_y_reverse("z1", limits = c(1, -1.25)) +
     coord_fixed() + 
     theme(legend.position = "none") +
-    ggtitle("Normalised articulatory space")
+    ggtitle("Predicted formants")
 
 PL01.acc.plot <- sum_PL01 %>%
   mutate(V12 = factor(V1, levels = c("i", "e", "a", "o", "u", "ɨ"))) %>%
@@ -215,8 +215,8 @@ plot_polar_smooths(
   sep = "_"
 ) + 
   coord_fixed(ratio = 1) +
-  scale_x_continuous("Antero-posterior axis (mm)") +
-  scale_y_continuous("Vertical axis (mm)") +
+  scale_x_continuous("Tongue backness (mm)") +
+  scale_y_continuous("Tongue height (mm)") +
   theme(legend.position = "top")
 ```
 
@@ -238,8 +238,8 @@ plot_polar_smooths(
   sep = "_"
 ) + 
   coord_fixed(ratio = 1) +
-  scale_x_continuous("Antero-posterior axis (mm)") +
-  scale_y_continuous("Vertical axis (mm)") +
+  scale_x_continuous("Tongue backness (mm)") +
+  scale_y_continuous("Tongue height (mm)") +
   theme(legend.position = "top")
 ```
 
@@ -506,7 +506,7 @@ f1 <- ef1 %>%
   geom_line(aes( color = stress)) +
   facet_wrap(~V1) +
   scale_y_reverse("F1.z") +
-  scale_x_continuous("duration (ms)") +
+  scale_x_continuous("Duration (ms)") +
   theme(legend.position = "top")
 f1
 
@@ -578,7 +578,7 @@ f2 <- ef2 %>%
   geom_line(aes( color = stress)) +
   facet_wrap(~V1) +
   scale_y_reverse("F2.z") +
-  scale_x_continuous("duration (ms)") +
+  scale_x_continuous("Duration (ms)") +
   theme(legend.position = "top")
 f2
 
@@ -649,7 +649,7 @@ z1 <- ez1 %>%
   geom_line(aes( color = stress)) +
   facet_wrap(~V1) +
   scale_y_reverse("z1") +
-  scale_x_continuous("duration (ms)") +
+  scale_x_continuous("Duration (ms)") +
   theme(legend.position = "top")
 z1
 
@@ -721,7 +721,7 @@ z2 <- ez2 %>%
   geom_line(aes( color = stress)) +
   facet_wrap(~V1) +
   scale_y_reverse("z2") +
-  scale_x_continuous("duration (ms)") +
+  scale_x_continuous("Duration (ms)") +
   theme(legend.position = "top")
 z2
 
@@ -824,7 +824,7 @@ eff0 %>%
   geom_line(aes(color = stress)) +
   facet_wrap(~V1) +
   scale_y_reverse("f0.z") +
-  scale_x_continuous("duration (ms)")
+  scale_x_continuous("Duration (ms)")
 
 ggsave(file = "./figures/Figure9.pdf", width = 7, height = 5, device = cairo_pdf)
 ```

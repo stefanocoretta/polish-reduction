@@ -1,48 +1,62 @@
 ---
-title: "Analysis"
-output: 
-  pdf_document: 
+title: "Supplement: *Distance vs. time. Articulatory and acoustic consequences of reduced vowel duration in Polish*"
+author: "Patrycja Strycharczuk, Małgorzata Ćavar, Stefano Coretta"
+output:
+  rmdformats::downcute:
+    toc_depth: 3
     number_sections: yes
-    latex_engine: xelatex
-    highlight: tango
+    use_bookdown: yes
+    fig_width: 7
+    fig_height: 5
+bibliography: "`r here::here('./references.bib')`"
+cls: unified-style-sheet-for-linguistics.csl
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_knit$set(root.dir = here::here())
 library(usdm)
 library(tidyverse)
 library(rticulate)
 library(ggpubr)
 library(ggrepel)
+library(patchwork)
 library(lme4)
+library(lmerTest)
 library(optimx)
 library(performance)
 library(effects)
-pl_theme <- theme(
-  axis.text = element_text(size = 14),
-  axis.text.x = element_text(size = 12),
-  axis.title = element_text(size = 12),
-  strip.text = element_text(size = 14)
+library(sjPlot)
+theme_set(theme_minimal(base_family = "Lato"))
+options(
+  ggplot2.discrete.fill = list(
+    # 2 cols
+    c("#264653", "#e76f51"),
+    # 3 cols
+    c("#B09B37", "#955F47", "#A8B9CB"),
+    # 6 cols
+    c("#7ACCD7", "#115896", "#7C6C65", "#4C4C53", "#BA2F00", "#21282F")
+  )
 )
 ```
 
-# Prep data
-
-```{r read-data}
-midpoint_rotated <- readRDS("./data/derived/midpoint_rotated.rds")
-midpoint_long <- readRDS("./data/derived/midpoint_long.rds")
-```
+# Overview
 
 ```{r prep-data}
-midpoint_rotated <- midpoint_rotated %>%
+midpoint_rotated <- readRDS("./data/derived/midpoint_rotated.rds") %>%
   mutate(
     rate = factor(rate, levels = c("fast", "normal", "slow")),
     stress = factor(stress, levels = c("unstressed", "stressed")),
     item = factor(item),
-    V1 = factor(V1, levels = c("a", "e", "i", "o", "u", "y")),
+    V1 = str_replace(V1, "y", "ɨ"),
+    V1 = factor(V1, levels = c("a", "e", "i", "o", "u", "ɨ")),
     frame = item,
-    duration.log = log(duration)
+    duration.log = log(duration),
+    z1 = as.numeric(z1),
+    z2 = as.numeric(z2),
+    f1.z = as.numeric(f1.z),
+    f2.z = as.numeric(f2.z),
+    f0.z = as.numeric(f0.z)
   )
 
 levels(midpoint_rotated$frame) <- c(
@@ -54,14 +68,32 @@ levels(midpoint_rotated$frame) <- c(
 
 contrasts(midpoint_rotated$V1) <- "contr.sum"
 
-midpoint_long <- midpoint_long %>%
+midpoint_long <- readRDS("./data/derived/midpoint_long.rds") %>%
   mutate(
     rate = factor(rate, levels = c("fast", "normal", "slow")),
-    stress = factor(stress, levels = c("unstressed", "stressed"))
+    stress = factor(stress, levels = c("unstressed", "stressed")),
+    V1 = factor(V1, levels = c("a", "e", "i", "o", "u", "y")),
+    V1 = recode_factor(V1, i = "i", e = "e", y = "ɨ", a = "a", o = "o", u = "u")
   )
 ```
 
-# Illustrate articulatory undershoot
+This supplementary document complements the paper *Distance vs. time. Articulatory and acoustic consequences of reduced vowel duration in Polish*.
+
+The following sections illustrate:
+
+1. The articulatory data normalisation procedure.
+2. Descriptive plots of the raw data.
+3. Code and plots of the linear regression models.
+4. Summaries of the models in 3.
+5. Extra analyses of F0 and F3.
+
+Only relevant R code is shown in this document.
+The full code can be inspected on the OSF repository at <https://osf.io/hy7nt/?view_only=d06775a2cb1d4786a0442b0f15d73296>, in the file `code/analysis.Rmd`.
+
+# Normalisation procedure
+
+This is Figure 1 from the paper, which illustrates the normalisation procedure.
+See paper for details.
 
 ```{r pl01}
 PL01 <- midpoint_long %>%
@@ -72,58 +104,11 @@ PL01 <- midpoint_long %>%
   ) %>%
   mutate(
     RateV1 = interaction(rate, V1, sep = "_"),
-    StressV1 = interaction(stress, V1, sep = "_"),
-    V1 = factor(V1)
+    StressV1 = interaction(stress, V1, sep = "_")
   ) 
 ```
 
-```{r pl01-rate}
-pl01_rate.gam <- polar_gam(
-  Y ~
-    RateV1 + 
-    s(X) +
-    s(X, by = RateV1),
-  data = PL01
-)
-
-plot_polar_smooths(
-  pl01_rate.gam,
-  series = X,
-  comparison = V,
-  facet_terms = rate,
-  split = list(RateV1 = c("rate", "V")),
-  sep = "_"
-) + 
-  coord_fixed(ratio = 1) + theme_minimal() +
-  scale_x_continuous("tongue position (mm)") +
-  scale_y_continuous("tongue height (mm)")
-```
-
-```{r pl01-stress}
-pl01_stress.gam <- polar_gam(
-  Y ~
-    StressV1 +
-    s(X) +
-    s(X, by = StressV1),
-  data = PL01
-)
-
-plot_polar_smooths(
-  pl01_stress.gam,
-  series = X,
-  comparison = V,
-  facet_terms = stress, 
-  split = list(StressV1 = c("stress", "V")),
-  sep = "_"
-) + 
-  coord_fixed(ratio = 1) + theme_minimal() +
-  scale_x_continuous("tongue position (mm)") +
-  scale_y_continuous("tongue height (mm)")
-```
-
-# Illustrate normalisation
-
-```{r pl01-v}
+```{r pl01-v, cache=TRUE}
 pl01.gam <- polar_gam(
   Y ~
     V1 +
@@ -132,17 +117,15 @@ pl01.gam <- polar_gam(
   data = PL01
 )
 
-PL01.smooths.plot <- plot_polar_smooths(
-  pl01.gam, series = X, comparison = V1
-  ) +
+PL01.smooths.plot <- predict_polar_gam(pl01.gam) %>%
+  mutate(V1 = factor(V1, levels = c("a", "e", "i", "o", "u", "ɨ"))) %>%
+  ggplot(aes(X, Y, colour = V1, linetype = V1)) +
+  geom_path() +
   coord_fixed(ratio = 1) + 
-  theme_minimal() +
-  theme(legend.title = element_blank(),
-        text = element_text(size = 6),
-        legend.key.size = unit(0.6, "lines")) +
   ggtitle("Tongue contours") +
-  scale_x_continuous("tongue position (mm)") +
-  scale_y_continuous("tongue height (mm)")
+  scale_x_reverse("Tongue backness (mm)") +
+  scale_y_continuous("Tongue height (mm)") +
+  theme(legend.title = element_blank())
 ```
 
 ```{r sum-pl01}
@@ -159,108 +142,148 @@ sum_PL01 <- midpoint_rotated %>%
   )
 
 PL01.PCA.plot <- sum_PL01 %>%
-  mutate(V1 = factor(V1, levels = c("i", "e", "y", "a", "o", "u"))) %>%
-  arrange(V1) %>%
+  mutate(V12 = factor(V1, levels = c("i", "e", "ɨ", "a", "o", "u"))) %>%
+  arrange(V12) %>%
   ggplot() +
     aes(PC1, PC2, label = V1) +
     geom_polygon(color = "black", fill = NA, size = 0.25, linetype = "dashed") +
-    geom_text(size = 2.5) +
+    geom_label(aes(fill = V1), colour = "white") +
     scale_x_reverse("PC1") +
-    scale_y_reverse("PC2") +
-    scale_fill_grey() +
-    theme_minimal() +
+    scale_y_reverse("PC2", limits = c(5.5, -4)) +
     coord_fixed() + 
-    theme(legend.position = "bottom",
-        text = element_text(size = 6),
-        legend.title = element_blank()) +
+    theme(
+      legend.position = "none"
+    ) +
     ggtitle("PCA results")
 
 PL01.rot.plot <- sum_PL01 %>%
-  mutate(V1 = factor(V1, levels = c("i", "e", "y", "a", "o", "u"))) %>%
-  arrange(V1) %>%
+  mutate(V12 = factor(V1, levels = c("i", "e", "ɨ", "a", "o", "u"))) %>%
+  arrange(V12) %>%
   ggplot() +
     aes(z2, z1, label = V1) +
     geom_polygon(color = "black", fill = NA, size = 0.25, linetype = "dashed") +
-    geom_text(size = 2.5) +
+    geom_label(aes(fill = V1), colour = "white") +
     scale_x_reverse("z2") +
-    scale_y_reverse("z1") +
-    scale_fill_grey() +
-    theme_minimal() +
+    scale_y_reverse("z1", limits = c(1, -1.25)) +
     coord_fixed() + 
-    theme(legend.position = "bottom",
-          text = element_text(size = 6),
-          legend.title = element_blank()) +
-    ggtitle("Normalised articulatory space")
+    theme(legend.position = "none") +
+    ggtitle("Predicted formants")
 
 PL01.acc.plot <- sum_PL01 %>%
-  mutate(V1 = factor(V1, levels = c("i", "e", "a", "o", "u", "y"))) %>%
-  arrange(V1) %>%
+  mutate(V12 = factor(V1, levels = c("i", "e", "a", "o", "u", "ɨ"))) %>%
+  arrange(V12) %>%
   ggplot() +
     aes(f2.z, f1.z, label = V1) +
     geom_polygon(color = "black", fill = NA, size = 0.25, linetype = "dashed") +
-    geom_text(size = 2.5) +
-    scale_x_reverse("F2.z") +
-    scale_y_reverse("F1.z") +
-    scale_fill_grey() +
-    theme_minimal() +
+    geom_label(aes(fill = V1), colour = "white") +
+    scale_x_reverse("F2.z", limits = c(2, -2)) +
+    scale_y_reverse("F1.z", limits = c(2, -1.5)) +
     coord_fixed() + 
-    theme(legend.position = "bottom",
-          text = element_text(size = 6),
-          legend.title = element_blank()) +
+    theme(legend.position = "none") +
     ggtitle("Normalised acoustic space")
 ```
 
 ```{r save-norm}
-ggarrange(
-  PL01.smooths.plot, PL01.PCA.plot, PL01.rot.plot, PL01.acc.plot,
-  ncol = 2, nrow = 2
+PL01.smooths.plot + PL01.PCA.plot + PL01.rot.plot + PL01.acc.plot
+
+ggsave(file = "./figures/Figure1.pdf", width = 7, height = 5, device = cairo_pdf)
+```
+
+
+# Descriptive statistics plots
+
+## Articulatory undershoot
+
+Tongue contours from ultrasound tongue imaging of speaker PL01.
+Tongue tip on the right.
+
+```{r pl01-rate, cache=TRUE}
+pl01_rate.gam <- polar_gam(
+  Y ~
+    RateV1 + 
+    s(X) +
+    s(X, by = RateV1),
+  data = PL01
 )
 
-ggsave(file = "./figures/norm.pdf", width = 6)
+plot_polar_smooths(
+  pl01_rate.gam,
+  series = X,
+  comparison = rate,
+  facet_terms = V,
+  split = list(RateV1 = c("rate", "V")),
+  sep = "_"
+) + 
+  coord_fixed(ratio = 1) +
+  scale_x_continuous("Tongue backness (mm)") +
+  scale_y_continuous("Tongue height (mm)") +
+  theme(legend.position = "top")
 ```
 
-# Descriptive results
+```{r pl01-stress, cache=TRUE}
+pl01_stress.gam <- polar_gam(
+  Y ~
+    StressV1 +
+    s(X) +
+    s(X, by = StressV1),
+  data = PL01
+)
 
-```{r rate}
-means <- aggregate(duration ~  rate, midpoint_rotated, mean)
-means$duration <- round(means$duration, 2)
-
-dur.rate <- ggboxplot(midpoint_rotated, x = "rate", y = "duration") +
-  scale_y_continuous("duration (ms)") +
-  scale_x_discrete("rate") +
-  stat_summary(fun = mean, geom = "point", size = 1) +
-  geom_text(data = means, aes(label = duration, y = duration + 5), size = 3) +
-  theme(text = element_text(size = 10))
+plot_polar_smooths(
+  pl01_stress.gam,
+  series = X,
+  comparison = stress,
+  facet_terms = V, 
+  split = list(StressV1 = c("stress", "V")),
+  sep = "_"
+) + 
+  coord_fixed(ratio = 1) +
+  scale_x_continuous("Tongue backness (mm)") +
+  scale_y_continuous("Tongue height (mm)") +
+  theme(legend.position = "top")
 ```
 
-```{r stress}
-means <- aggregate(duration ~  stress, midpoint_rotated, mean)
-means$duration = round(means$duration, 2)
+## Duration
 
-dur.stress <- ggboxplot(midpoint_rotated, x = "stress", y = "duration") +
-  scale_y_continuous("duration (ms)") +
-  scale_x_discrete("stress") +
+Figure 2 from the paper with boxplots and means of vowel duration depending on speech rate and stress.
+
+```{r stress-rate}
+dur.sum <- midpoint_rotated %>%
+  select(rate, stress, duration) %>%
+  group_by(rate, stress) %>%
+  summarise(
+    mean.dur = round(mean(duration),1),
+    median.dur = round(median(duration),1),
+    .groups = "drop"
+  )
+
+dur.stress.rate <- ggboxplot(midpoint_rotated, x = "stress", y = "duration") +
+  scale_y_continuous('duration (ms)') +
+  scale_x_discrete('rate') +
   stat_summary(fun = mean, geom = "point", size = 1) +
-  geom_text(data = means, aes(label = duration, y = duration + 5), size = 3) +
-  theme(text = element_text(size = 10))
+  geom_text(data = dur.sum, aes(label = mean.dur, y = median.dur + 5), size = 3) +
+  facet_wrap(~rate) +
+  theme(axis.title.x = element_blank())
 ```
 
 ```{r save-rate-stress}
-ggarrange(dur.rate, dur.stress, ncol = 2, nrow = 1)
-ggsave(file = "./figures/dur_descriptive.pdf", width = 6, height = 3)
+ggsave(dur.stress.rate, file = "./figures/Figure2.pdf", width = 6, height = 3, device = cairo_pdf)
 ```
 
-## Acoustic vowel plots
+
+## Vowel space
+
+### Acoustic vowel space
 
 ```{r acc}
 acc.vowel.plot.rate <- midpoint_rotated %>%
   group_by(V1, rate) %>%
   summarise(mean.f1 = mean(f1.z, na.rm = T),
-            mean.f2 = mean(f2.z, na.rm = T)) %>%
+            mean.f2 = mean(f2.z, na.rm = T),
+            .groups = "drop") %>%
   ungroup %>%
-  mutate(V1 = factor(V1, levels = c("i", "e", "a", "o", "u", "y")),
-         rate = factor(rate, levels = c("normal", "slow", "fast"))) %>%
-  arrange(rate,V1)
+  mutate(V1 = factor(V1, levels = c("i", "e", "a", "o", "u", "ɨ"))) %>%
+  arrange(rate, V1)
 
 acc.rate <- acc.vowel.plot.rate %>%
   ggplot() +
@@ -271,7 +294,7 @@ acc.rate <- acc.vowel.plot.rate %>%
     scale_fill_grey() +
     theme_minimal() +
     geom_point() +
-    geom_text_repel(size = 4) +
+    geom_text_repel() +
     theme(legend.position = "bottom",
           legend.title = element_blank()) +
     theme(plot.margin = unit(c(0,0, 0,0), "lines"))
@@ -279,9 +302,10 @@ acc.rate <- acc.vowel.plot.rate %>%
 acc.vowel.plot.stress <- midpoint_rotated %>%
   group_by(V1, stress) %>%
   summarise(mean.f1 = mean(f1.z, na.rm = T),
-            mean.f2 = mean(f2.z, na.rm = T)) %>%
+            mean.f2 = mean(f2.z, na.rm = T),
+            .groups = "drop") %>%
   ungroup %>%
-  mutate(V1 = factor(V1, levels = c("i", "e", "a", "o", "u", "y"))) %>%
+  mutate(V1 = factor(V1, levels = c("i", "e", "a", "o", "u", "ɨ"))) %>%
   arrange(stress, V1)
 
 acc.stress <- acc.vowel.plot.stress %>%
@@ -299,16 +323,17 @@ acc.stress <- acc.vowel.plot.stress %>%
     theme(plot.margin = unit(c(0,0, 0,0), "lines"))
 ```
 
-## Articulatory vowel space
+### Articulatory vowel space
 
 ```{r art}
 art.vowel.plot.rate <- midpoint_rotated %>%
   group_by(V1, rate) %>%
   summarise(mean.comp1 = mean(z1, na.rm = T),
-            mean.comp2 = mean(z2, na.rm = T)) %>%
+            mean.comp2 = mean(z2, na.rm = T),
+            .groups = "drop") %>%
   ungroup %>%
   mutate(
-    V1 = factor(V1, levels = c("i", "y", "e", "a", "o", "u")),
+    V1 = factor(V1, levels = c("i", "ɨ", "e", "a", "o", "u")),
     rate = factor(rate, levels = c("normal", "slow", "fast"))
   ) %>%
   arrange(rate,V1)
@@ -330,9 +355,10 @@ art.rate <- art.vowel.plot.rate %>%
 art.vowel.plot.stress <- midpoint_rotated %>%
   group_by(V1, stress) %>%
   summarise(mean.comp1 = mean(z1, na.rm = T),
-            mean.comp2 = mean(z2,na.rm = T)) %>%
+            mean.comp2 = mean(z2,na.rm = T),
+            .groups = "drop") %>%
   ungroup %>%
-  mutate(V1 = factor(V1, levels = c("i", "y", "e", "a", "o", "u"))) %>%
+  mutate(V1 = factor(V1, levels = c("i", "ɨ", "e", "a", "o", "u"))) %>%
   arrange(stress, V1)
 
 art.stress <- art.vowel.plot.stress %>%
@@ -350,15 +376,31 @@ art.stress <- art.vowel.plot.stress %>%
     theme(plot.margin = unit(c(0,0, 0,0), "lines"))
 ```
 
-## Save
+### Save
 
 ```{r save-acc-art}
-ggarrange(acc.rate, acc.stress, art.rate, art.stress, ncol = 2, nrow = 2)
+acc.rate + acc.stress + art.rate + art.stress
 
-ggsave(file = "./figures/descriptive.pdf", height = 6.5, width = 7)
+ggsave(file = "./figures/Figure3.pdf", height = 6.5, width = 7, device = cairo_pdf)
 ```
 
-# Modelling
+# Inferential statistics
+
+## VIF (multicollinearity)
+
+VIF values below 3 indicate absence of multicollinearity [@zuur2010].
+For all predictors, VIF < 3.
+
+```{r vif}
+midpoint_rotated %>%
+  dplyr::select(duration, f1.z, f2.z, f0.z, rate, stress) %>%
+  mutate(
+    rate = as.numeric(rate) - 1.5,
+    stress = as.numeric(stress) - 1
+  ) %>%
+  as.data.frame(.) %>%
+  usdm::vif(.)
+```
 
 ## Duration
 
@@ -372,61 +414,68 @@ dur.lmer.full <- lmer(
   control = lmerControl(
     optimizer = "optimx",
     calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
+    optCtrl = list(method = "bobyqa")
+  )
 )
-
-dur.lmer2 <- lmer(
-  duration.log ~
-    (rate+stress|speaker) +
-    (1|frame) +
-    rate*(V1+stress),
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-dur.lmer3 <- lmer(
-  duration.log ~
-    (rate+stress|speaker) +
-    (1|frame) +
-    rate*V1+stress,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-
-anova(dur.lmer.full, dur.lmer2, dur.lmer3)
 ```
 
 ```{r ef-dur}
-ef_dur <- as.data.frame(effect("rate:V1:stress", dur.lmer.full)) %>%
-  mutate(V1 = factor(V1, levels = c("a", "e", "i", "o", "u", "y")))
+ef_dur_1 <- as.data.frame(effect("rate:stress", dur.lmer.full))
+ef_dur <- as.data.frame(effect("rate:V1:stress", dur.lmer.full))
 
-pd = position_dodge(width = 0.5)
+pd = position_dodge(width = 0.8)
+
+ef_dur_1 <- ef_dur_1 %>%
+  mutate(fit = exp(fit),
+         lower = exp(lower),
+         upper = exp(upper))
 
 ef_dur <- ef_dur %>%
   mutate(fit = exp(fit),
          lower = exp(lower),
          upper = exp(upper))
 
-ef_dur %>%
+dur_1 <- ef_dur_1 %>%
   ggplot() +
-    aes(V1, fit, color = stress) +
+    aes(1, fit, color = stress, linetype = stress) +
     geom_point(position = pd) +
-    geom_errorbar(aes(ymin = lower, ymax = upper), position = pd) +
-    theme_bw() +
-    pl_theme +
+    geom_errorbar(aes(ymin = lower, ymax = upper), position = pd, width = 0, size = 0.5) +
     facet_wrap(~rate) +
-    scale_x_discrete("vowel") +
-    scale_y_continuous("duration (ms)")
+    scale_x_discrete("Rate") +
+    scale_y_continuous("Duration (ms)")
 
-ggsave(file = "./figures/dur_ef.pdf", width = 6, height = 3)
+dur <- ef_dur %>%
+  ggplot() +
+    aes(V1, fit, color = stress, linetype = stress) +
+    geom_point(position = pd) +
+    geom_errorbar(aes(ymin = lower, ymax = upper), position = pd, width = 0, size = 0.5) +
+    facet_wrap(~rate) +
+    scale_x_discrete("Vowel") +
+    scale_y_continuous("Duration (ms)")
+
+durdur <- dur_1 + dur + plot_layout(ncol = 2, widths = c(0.3, 0.7), guides = "collect") &
+  theme(legend.position = "top")
+
+ggsave(durdur, file = "./figures/Figure4.pdf", width = 7, height = 4, device = cairo_pdf)
 ```
+
+```{r dur-anova}
+dur.lmer2=lmer(duration.log ~ (rate+stress|speaker)+(1|frame)+rate*(V1+stress), data=midpoint_rotated,
+                   control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                       optCtrl = list(method = "bobyqa")))
+
+
+
+dur.lmer3=lmer(duration.log ~ (rate+stress|speaker)+(1|frame)+rate*V1+stress, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+anova(dur.lmer.full, dur.lmer2, dur.lmer3)
+
+```
+
+
 
 ## F1
 
@@ -440,106 +489,65 @@ f1.lmer.full <- lmer(
   control = lmerControl(
     optimizer = "optimx",
     calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
+    optCtrl = list(method = "bobyqa")
+  )
 )
-
-f1.lmer.2 <- lmer(
-  f1.z ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 * duration +
-    V1 * stress,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-f1.lmer.3 = lmer(
-  f1.z ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 * duration +
-    stress,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-f1.lmer.4 <- lmer(
-  f1.z ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 * duration,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-f1.lmer.5 <- lmer(
-  f1.z ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 +
-    duration,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-f1.lmer.6 <- lmer(
-  f1.z ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-f1.lmer.7 = lmer(
-  f1.z ~ (1+stress|speaker) +
-    (1|frame) +
-    duration,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-     optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-anova(f1.lmer.full, f1.lmer.2, f1.lmer.3, f1.lmer.4, f1.lmer.5, f1.lmer.6, f1.lmer.7)
-
-summary(f1.lmer.full)
 ```
 
 ```{r ef-f1}
 ef1 <- as.data.frame(effect("V1:duration:stress", f1.lmer.full)) %>%
-  mutate(V1 = factor(V1, levels = c("i", "y", "u", "e", "a", "o")))
+  mutate(V1 = factor(V1, levels = c("i", "ɨ", "u", "e", "a", "o")))
 
 f1 <- ef1 %>%
   ggplot() +
   aes(duration, fit, linetype = stress, fill = stress) +
-  geom_point(data = midpoint_rotated, aes(duration, f1.z, color = stress), alpha = 0.5) +
+  geom_point(data = midpoint_rotated, aes(duration, f1.z, color = stress), alpha = 0.2) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
   geom_line(aes( color = stress)) +
   facet_wrap(~V1) +
   scale_y_reverse("F1.z") +
-  scale_x_continuous("duration (ms)") +
-  theme_bw() +
-  pl_theme
+  scale_x_continuous("Duration (ms)") +
+  theme(legend.position = "top")
+f1
 
-ggsave(file = "./figures/f1_ef.pdf", width = 6, height = 4)
+ggsave(f1, file = "./figures/Figure5.pdf", width = 7, height = 5, device = cairo_pdf)
 ```
+
+```{r f1-anova}
+f1.lmer.2=lmer(f1.z ~ (1+stress|speaker)+(1|frame)+V1*duration+V1*stress, data=midpoint_rotated,
+                  control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                  optCtrl = list(method = "bobyqa")))
+
+
+f1.lmer.3=lmer(f1.z ~ (1+stress|speaker)+(1|frame)+V1*duration+stress, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+f1.lmer.4=lmer(f1.z ~ (1+stress|speaker)+(1|frame)+V1*duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+f1.lmer.5=lmer(f1.z ~ (1+stress|speaker)+(1|frame)+V1+duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+f1.lmer.6=lmer(f1.z ~ (1+stress|speaker)+(1|frame)+V1, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+f1.lmer.7=lmer(f1.z ~ (1+stress|speaker)+(1|frame)+duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+
+
+anova(f1.lmer.full, f1.lmer.2, f1.lmer.3, f1.lmer.4, f1.lmer.5, f1.lmer.6, f1.lmer.7)
+```
+
 
 ## F2
 
@@ -553,106 +561,64 @@ f2.lmer.full <- lmer(
   control = lmerControl(
     optimizer = "optimx",
     calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
+    optCtrl = list(method = "bobyqa")
+  )
 )
-
-f2.lmer.2 <- lmer(
-  f2.z ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 * duration +
-    V1 * stress,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-f2.lmer.3 = lmer(
-  f2.z ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 * duration +
-    stress,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-f2.lmer.4 <- lmer(
-  f2.z ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 * duration,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-f2.lmer.5 <- lmer(
-  f2.z ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 +
-    duration,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-f2.lmer.6 <- lmer(
-  f2.z ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-f2.lmer.7 = lmer(
-  f2.z ~ (1+stress|speaker) +
-    (1|frame) +
-    duration,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-     optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-anova(f2.lmer.full, f2.lmer.2, f2.lmer.3, f2.lmer.4, f2.lmer.5, f2.lmer.6, f2.lmer.7)
-
-summary(f2.lmer.full)
 ```
 
 ```{r ef-f2}
 ef2 <- as.data.frame(effect("V1:duration:stress", f2.lmer.full)) %>%
-  mutate(V1 = factor(V1, levels = c("i", "y", "u", "e", "a", "o")))
+  mutate(V1 = factor(V1, levels = c("i", "ɨ", "u", "e", "a", "o")))
 
 f2 <- ef2 %>%
   ggplot() +
   aes(duration, fit, linetype = stress, fill = stress) +
-  geom_point(data = midpoint_rotated, aes(duration, f2.z, color = stress), alpha = 0.5) +
+  geom_point(data = midpoint_rotated, aes(duration, f2.z, color = stress), alpha = 0.2) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
   geom_line(aes( color = stress)) +
   facet_wrap(~V1) +
   scale_y_reverse("F2.z") +
-  scale_x_continuous("duration (ms)") +
-  theme_bw() +
-  pl_theme
+  scale_x_continuous("Duration (ms)") +
+  theme(legend.position = "top")
+f2
 
-ggsave(file = "./figures/f2_ef.pdf", width = 6, height = 4)
+ggsave(f2, file = "./figures/Figure6.pdf", width = 7, height = 5, device = cairo_pdf)
 ```
+
+```{r f2-anova}
+f2.lmer.2=lmer(f2.z ~ (1+stress|speaker)+(1|frame)+V1*duration+V1*stress, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+f2.lmer.3=lmer(f2.z ~ (1+stress|speaker)+(1|frame)+V1*duration+stress, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+f2.lmer.4=lmer(f2.z ~ (1+stress|speaker)+(1|frame)+V1*duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+f2.lmer.5=lmer(f2.z ~ (1+stress|speaker)+(1|frame)+V1+duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+f2.lmer.6=lmer(f2.z ~ (1+stress|speaker)+(1|frame)+V1, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+f2.lmer.7=lmer(f2.z ~ (1+stress|speaker)+(1|frame)+duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+
+anova(f2.lmer.full, f2.lmer.2, f2.lmer.3, f2.lmer.4, f2.lmer.5, f2.lmer.6, f2.lmer.7)
+```
+
 
 ## Z1
 
@@ -666,106 +632,65 @@ z1.lmer.full <- lmer(
   control = lmerControl(
     optimizer = "optimx",
     calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
+    optCtrl = list(method = "bobyqa")
+  )
 )
-
-z1.lmer.2 <- lmer(
-  z1 ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 * duration +
-    V1 * stress,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-z1.lmer.3 = lmer(
-  z1 ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 * duration +
-    stress,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-z1.lmer.4 <- lmer(
-  z1 ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 * duration,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-z1.lmer.5 <- lmer(
-  z1 ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 +
-    duration,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-z1.lmer.6 <- lmer(
-  z1 ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-z1.lmer.7 = lmer(
-  z1 ~ (1+stress|speaker) +
-    (1|frame) +
-    duration,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-     optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-anova(z1.lmer.full, z1.lmer.2, z1.lmer.3, z1.lmer.4, z1.lmer.5, z1.lmer.6, z1.lmer.7)
-
-summary(z1.lmer.full)
 ```
 
 ```{r ef-z1}
 ez1 <- as.data.frame(effect("V1:duration:stress", z1.lmer.full)) %>%
-  mutate(V1 = factor(V1, levels = c("i", "y", "u", "e", "a", "o")))
+  mutate(V1 = factor(V1, levels = c("i", "ɨ", "u", "e", "a", "o")))
 
 z1 <- ez1 %>%
   ggplot() +
   aes(duration, fit, linetype = stress, fill = stress) +
-  geom_point(data = midpoint_rotated, aes(duration, z1, color = stress), alpha = 0.5) +
+  geom_point(data = midpoint_rotated, aes(duration, z1, color = stress), alpha = 0.2) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
   geom_line(aes( color = stress)) +
   facet_wrap(~V1) +
   scale_y_reverse("z1") +
-  scale_x_continuous("duration (ms)") +
-  theme_bw() +
-  pl_theme
+  scale_x_continuous("Duration (ms)") +
+  theme(legend.position = "top")
+z1
 
-ggsave(file = "./figures/z1_ef.pdf", width = 6, height = 4)
+ggsave(z1, file = "./figures/Figure7.pdf", width = 7, height = 5, device = cairo_pdf)
 ```
+
+```{r z1-anova}
+z1.lmer.2=lmer(z1 ~ (1+stress|speaker)+(1|frame)+V1*duration+V1*stress, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+z1.lmer.3=lmer(z1 ~ (1+stress|speaker)+(1|frame)+V1*duration+stress, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+z1.lmer.4=lmer(z1 ~ (1+stress|speaker)+(1|frame)+V1*duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+z1.lmer.5=lmer(z1 ~ (1+stress|speaker)+(1|frame)+V1+duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+z1.lmer.6=lmer(z1 ~ (1+stress|speaker)+(1|frame)+V1, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+z1.lmer.7=lmer(z1 ~ (1+stress|speaker)+(1|frame)+duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+
+anova(z1.lmer.full, z1.lmer.2, z1.lmer.3, z1.lmer.4, z1.lmer.5, z1.lmer.6, z1.lmer.7)
+
+```
+
 
 ## Z2
 
@@ -779,110 +704,97 @@ z2.lmer.full <- lmer(
   control = lmerControl(
     optimizer = "optimx",
     calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
+    optCtrl = list(method = "bobyqa")
+  )
 )
-
-z2.lmer.2 <- lmer(
-  z2 ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 * duration +
-    V1 * stress,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-z2.lmer.3 = lmer(
-  z2 ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 * duration +
-    stress,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-z2.lmer.4 <- lmer(
-  z2 ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 * duration,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-z2.lmer.5 <- lmer(
-  z2 ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 +
-    duration,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-z2.lmer.6 <- lmer(
-  z2 ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-z2.lmer.7 = lmer(
-  z2 ~ (1+stress|speaker) +
-    (1|frame) +
-    duration,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-     optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-anova(z2.lmer.full, z2.lmer.2, z2.lmer.3, z2.lmer.4, z2.lmer.5, z2.lmer.6, z2.lmer.7)
-
-summary(z2.lmer.full)
 ```
 
 ```{r ef-z2}
 ez2 <- as.data.frame(effect("V1:duration:stress", z2.lmer.full)) %>%
-  mutate(V1 = factor(V1, levels = c("i", "y", "u", "e", "a", "o")))
+  mutate(V1 = factor(V1, levels = c("i", "ɨ", "u", "e", "a", "o")))
 
 z2 <- ez2 %>%
   ggplot() +
   aes(duration, fit, linetype = stress, fill = stress) +
-  geom_point(data = midpoint_rotated, aes(duration, z2, color = stress), alpha = 0.5) +
+  geom_point(data = midpoint_rotated, aes(duration, z2, color = stress), alpha = 0.2) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
   geom_line(aes( color = stress)) +
   facet_wrap(~V1) +
   scale_y_reverse("z2") +
-  scale_x_continuous("duration (ms)") +
-  theme_bw() +
-  pl_theme
+  scale_x_continuous("Duration (ms)") +
+  theme(legend.position = "top")
+z2
 
-ggsave(file = "./figures/z2_ef.pdf", width = 6, height = 4)
+ggsave(z2, file = "./figures/Figure8.pdf", width = 7, height = 5, device = cairo_pdf)
 ```
+
+```{r z2-anova}
+z2.lmer.2=lmer(z2 ~ (1+stress|speaker)+(1|frame)+V1*duration+V1*stress, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+z2.lmer.3=lmer(z2 ~ (1+stress|speaker)+(1|frame)+V1*duration+stress, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+z2.lmer.4=lmer(z2 ~ (1+stress|speaker)+(1|frame)+V1*duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+z2.lmer.5=lmer(z2 ~ (1+stress|speaker)+(1|frame)+V1+duration, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+
+z2.lmer.6=lmer(z2 ~ (1+stress|speaker)+(1|frame)+V1, data=midpoint_rotated,
+               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
+                                   optCtrl = list(method = "bobyqa")))
+
+```
+
+
+## Composite plot
 
 ```{r f2-z2}
-ggarrange(f2 + theme(legend.position = "top"), z2 + theme(legend.position = "top"), ncol = 2)
+f2 + theme(legend.position = "top") + z2 + theme(legend.position = "top")
 ```
+
+
+# Model summaries
+
+## Duration
+
+```{r dur-lmer-tab}
+tab_model(dur.lmer.full, digits = 4, digits.p = 5, digits.re = 4)
+```
+
+## F1
+
+```{r f1-lmer-tab}
+tab_model(f1.lmer.full, digits = 4, digits.p = 5, digits.re = 4)
+```
+
+## F2
+
+```{r f2-lmer-tab}
+tab_model(f2.lmer.full, digits = 4, digits.p = 5, digits.re = 4)
+```
+
+## Z1
+
+```{r z1-lmer-tab}
+tab_model(z1.lmer.full, digits = 4, digits.p = 5, digits.re = 4)
+```
+
+## Z2
+
+```{r z2-lmer-tab}
+tab_model(z2.lmer.full, digits = 4, digits.p = 5, digits.re = 4)
+```
+
+# Further exploratory analyses
 
 ## F0
 
@@ -896,93 +808,13 @@ f0.lmer.full <- lmer(
   control = lmerControl(
     optimizer = "optimx",
     calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
+    optCtrl = list(method = "bobyqa")
+  )
 )
-
-f0.lmer.2 <- lmer(
-  f0.z ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 * duration +
-    V1 * stress,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-f0.lmer.3 <- lmer(
-  f0.z ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 * duration +
-    stress,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-f0.lmer.4 <- lmer(
-  f0.z ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1 * duration,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-f0.lmer.5 <- lmer(
-  f0.z ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1+ 
-    duration,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-
-f0.lmer.6 <- lmer(
-  f0.z ~
-    (1+stress|speaker) +
-    (1|frame) +
-    V1,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-f0.lmer.7 <- lmer(
-  f0.z ~
-    (1+stress|speaker) +
-    (1|frame) +
-    duration,
-  data = midpoint_rotated,
-  control = lmerControl(
-    optimizer = "optimx",
-    calc.derivs = FALSE,
-    optCtrl = list(method = "nlminb", starttests = FALSE, kkt = FALSE))
-)
-
-anova(f0.lmer.full, f0.lmer.2, f0.lmer.3, f0.lmer.4, f0.lmer.5, f0.lmer.6, f0.lmer.7)
-
-summary(f0.lmer.full)
 ```
 
 ```{r ef-f0}
-eff0 <- as.data.frame(effect("V1:duration:stress", f0.lmer.full)) %>%
-  mutate(V1 = factor(V1, levels = c("i", "y", "u", "e", "a", "o")))
+eff0 <- as.data.frame(effect("V1:duration:stress", f0.lmer.full))
 
 eff0 %>%
   ggplot() +
@@ -992,45 +824,29 @@ eff0 %>%
   geom_line(aes(color = stress)) +
   facet_wrap(~V1) +
   scale_y_reverse("f0.z") +
-  scale_x_continuous("duration (ms)") +
-  theme_bw() +
-  pl_theme
+  scale_x_continuous("Duration (ms)")
 
-ggsave(file = "./figures/f0_ef.pdf", width = 6, height = 4)
+ggsave(file = "./figures/Figure9.pdf", width = 7, height = 5, device = cairo_pdf)
 ```
 
-# F3
+```{r f0-lmer-tab}
+tab_model(f0.lmer.full)
+```
+
+## F3
 
 ```{r dur-f3}
 midpoint_rotated %>%
   ggplot() +
   aes(duration, f3, linetype = stress, fill = stress) +
-  geom_point(alpha = 0.5) +
+  geom_point(alpha = 0.2) +
   geom_smooth(method = "lm") +
-  facet_wrap(~V1) +
-  theme_bw() +
-  pl_theme
+  facet_wrap(~V1)
 ```
 
-# R2
+# Session info
 
-```{r r2}
-r2(f2.lmer.full)
-r2(f1.lmer.full)
-r2(z2.lmer.full)
-r2(z1.lmer.full)
-```
-
-# VIF
-
-```{r vif}
-midpoint_rotated %>%
-  dplyr::select(duration, f1.z, f2.z, f0.z, rate, stress) %>%
-  mutate(
-    rate = as.numeric(rate) - 1.5,
-    stress = as.numeric(stress) - 1
-  ) %>%
-  as.data.frame(.) %>%
-  usdm::vif(.)
+```{r sess-info}
+devtools::session_info()
 ```
 

@@ -305,14 +305,10 @@ acc.plot<-acc.vowel.plot%>%
         legend.title=element_blank())+
   facet_wrap(~rate)+
   theme(plot.margin = unit(c(0,0, 0,0), "lines"))
-
-
-
 ```
 
 
 ```{r pred_form}
-
 z_sum<- midpoint_rotated %>%
   group_by(V1, rate, stress) %>%
   summarise(mean.comp1 = mean(z1, na.rm=T),
@@ -325,8 +321,8 @@ z_sum<- midpoint_rotated %>%
 
 levels(z_sum$V1) <- c("i", "ɨ", "e", "a", "o", "u")
 
-z1z2.plot<-z_sum%>%
-  ggplot()+
+z1z2.plot <- z_sum %>%
+  ggplot() +
   aes(mean.comp2,mean.comp1, linetype=stress, label=V1)+
   geom_polygon(color = 'black', fill=NA)+
   scale_x_reverse("z2", limits=c(2, -1.5))+
@@ -340,8 +336,6 @@ z1z2.plot<-z_sum%>%
         legend.title=element_blank())+
   theme(plot.margin = unit(c(0,0, 0,0), "lines"))+
   facet_wrap(~rate)
-
-
 ```
 
 
@@ -426,22 +420,30 @@ ggsave(dur, file = "./figures/Figure4.pdf", width = 7, height = 4, device = cair
 ```
 
 ```{r dur-anova}
-dur.lmer2=lmer(duration.log ~ (rate+stress|speaker)+(1|frame)+rate*(V1+stress), data=midpoint_rotated,
-                   control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
-                                       optCtrl = list(method = "bobyqa")))
+dur.lmer2 = lmer(
+  duration.log ~ (rate + stress |
+                    speaker) + (1 | frame) + rate * (V1 + stress),
+  data = midpoint_rotated,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
 
-
-
-dur.lmer3=lmer(duration.log ~ (rate+stress|speaker)+(1|frame)+rate*V1+stress, data=midpoint_rotated,
-               control=lmerControl(optimizer = "optimx", calc.derivs = FALSE, 
-                                   optCtrl = list(method = "bobyqa")))
-
+dur.lmer3 = lmer(
+  duration.log ~ (rate + stress |
+                    speaker) + (1 | frame) + rate * V1 + stress,
+  data = midpoint_rotated,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
 
 anova(dur.lmer.full, dur.lmer2, dur.lmer3)
-
 ```
-
-
 
 ## F1
 
@@ -556,7 +558,7 @@ f1.stress.plot<-ef2 %>%
   ggplot()+
   aes(V1, fit, color=stress, linetype=stress)+
   geom_point(position=pd)+
-  geom_errorbar(aes(ymin = lower, ymax = upper),position=pd)+
+    geom_errorbar(aes(ymin = lower, ymax = upper), position = pd, width = 0, size = 0.5) +
   theme_bw()+
   scale_x_discrete('vowel')+
   scale_y_continuous('F1.z')
@@ -837,9 +839,6 @@ r2(z2.lmer.base)
 r2(z2.lmer.stress1)
 r2(z2.lmer.stress2)
 
-
-
-
 z2.lmer.final <- lmer(
   z2 ~
     (1+duration|speaker) +
@@ -852,25 +851,20 @@ z2.lmer.final <- lmer(
     optCtrl = list(method = "bobyqa")
   )
 )
-
 ```
 
 
 ```{r z2-emmeans}
-
 test(emtrends(z2.lmer.final, ~ V1, var="duration"))
-
 ```
 
 
 ```{r ef-z2}
-
 ef1 <- as.data.frame(effect("V1:duration", z2.lmer.final)) %>%
   mutate(V1 = factor(V1, levels=c('i','u','e','o','ɨ','a')))
 
 midpoint_rotated <- midpoint_rotated %>%
   mutate(V1 = factor(V1, levels=c('i','u','e','o','ɨ','a')))
-
 
 z2.dur.plot <- ef1 %>%
   ggplot()+
@@ -887,15 +881,10 @@ z2.dur.plot <- ef1 %>%
   scale_x_continuous('duration (ms)')+
   theme_bw()
 
-
 z2.dur.plot
 
 ggsave(z2.dur.plot, file = "./figures/Figure8.pdf", width = 4, height = 5, device = cairo_pdf)
 ```
-
-
-
-
 
 # Model summaries
 

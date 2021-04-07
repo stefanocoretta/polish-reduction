@@ -13,11 +13,12 @@ cls: unified-style-sheet-for-linguistics.csl
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 knitr::opts_knit$set(root.dir = here::here())
 library(usdm)
 library(tidyverse)
 library(rticulate)
+library(printr)
 library(ggpubr)
 library(ggrepel)
 library(patchwork)
@@ -28,7 +29,7 @@ library(performance)
 library(effects)
 library(sjPlot)
 library(emmeans)
-#theme_set(theme_minimal(base_family = "Lato"))
+theme_set(theme_bw(base_family = "Lato"))
 options(
   ggplot2.discrete.fill = list(
     # 2 cols
@@ -46,7 +47,7 @@ options(
 ```{r prep-data}
 midpoint_rotated <- readRDS("./data/derived/midpoint_rotated.rds") %>%
   mutate(
-    rate = factor(rate, levels = c("fast", "normal", "slow")),
+    rate = factor(rate, levels = c("slow", "normal", "fast")),
     stress = factor(stress, levels = c("unstressed", "stressed")),
     item = factor(item),
     V1 = str_replace(V1, "y", "ɨ"),
@@ -256,11 +257,13 @@ dur.sum <- midpoint_rotated %>%
     mean.dur = round(mean(duration),1),
     median.dur = round(median(duration),1),
     .groups = "drop"
-  )
+  ) %>%
+  mutate(rate = factor(rate, levels = c("slow", "normal", "fast")))
 
-dur.stress.rate <- ggboxplot(midpoint_rotated, x = "stress", y = "duration") +
-  scale_y_continuous('duration (ms)') +
-  scale_x_discrete('rate') +
+dur.stress.rate <- midpoint_rotated %>%
+  mutate(rate = factor(rate, levels = c("slow", "normal", "fast"))) %>%
+  ggboxplot(x = "stress", y = "duration") +
+  scale_y_continuous('Vowel duration (ms)') +
   stat_summary(fun = mean, geom = "point", size = 1) +
   geom_text(data = dur.sum, aes(label = mean.dur, y = median.dur + 5), size = 3) +
   facet_wrap(~rate) +
@@ -276,71 +279,79 @@ ggsave(dur.stress.rate, file = "./figures/Figure2.pdf", width = 6, height = 3, d
 
 
 ```{r acc}
-
-
-acc.vowel.plot<- midpoint_rotated %>%
+acc.vowel.plot <- midpoint_rotated %>%
   group_by(V1, rate, stress) %>%
-  summarise(mean.f1 = mean(f1.z, na.rm=T),
-            mean.f2 = mean(f2.z, na.rm=T))%>%
-  ungroup %>%
-  mutate(V1 = factor(V1, levels=c('i','e','a','o','u','ɨ')),
-         rate = factor(rate, levels=c( "fast","normal", "slow")),
-         stress = factor(stress, levels=c("stressed","unstressed")))%>%
+  summarise(mean.f1 = mean(f1.z, na.rm = T),
+            mean.f2 = mean(f2.z, na.rm = T), .groups = "drop") %>%
+  mutate(
+    V1 = factor(V1, levels = c('i', 'e', 'a', 'o', 'u', 'ɨ')),
+    rate = factor(rate, levels = c("slow", "normal", "fast")),
+    stress = factor(stress, levels = c("stressed", "unstressed"))
+  ) %>%
   arrange(stress, V1, rate)
 
-levels(acc.vowel.plot$V1) = c('i','e','a','o','u','ɨ')
+levels(acc.vowel.plot$V1) = c('i', 'e', 'a', 'o', 'u', 'ɨ')
 
-acc.plot<-acc.vowel.plot%>%
-  ggplot()+
-  aes(mean.f2,mean.f1, linetype=stress, label=V1)+
-  geom_polygon(color = 'black', fill=NA)+
-  scale_x_reverse("F2.z", limits=c(2, -1.5))+
-  scale_y_reverse("F1.z", limits=c(2.5, -1.5))+
-  scale_fill_grey()+
-  theme_minimal()+
-  geom_point()+
-  geom_text_repel(size=4)+
-  #coord_fixed()+ 
-  theme(legend.position="bottom",
-        legend.title=element_blank())+
-  facet_wrap(~rate)+
-  theme(plot.margin = unit(c(0,0, 0,0), "lines"))
+acc.plot <- acc.vowel.plot %>%
+  ggplot() +
+  aes(mean.f2, mean.f1, linetype = stress) +
+  geom_polygon(color = 'grey5', fill = NA) +
+  scale_x_reverse(limits = c(2, -1.5)) +
+  scale_y_reverse(limits = c(2.5, -1.5)) +
+  scale_fill_grey() +
+  scale_shape_manual(values = c(15, 17, 19, 23, 8, 4)) +
+  geom_point(aes(shape = V1, colour = V1), size = 4) +
+  #coord_fixed()+
+  theme(legend.position = "none") +
+  labs(
+    title = "(A) Observed vowel space",
+    y = "Normalised F1 (z-scores)",
+    x = "Normalised F2 (z-scores)"
+  ) +
+  facet_wrap( ~ rate) +
+  theme(plot.margin = unit(c(0, 0, 0, 0), "lines"))
 ```
 
 
 ```{r pred_form}
-z_sum<- midpoint_rotated %>%
+z_sum <- midpoint_rotated %>%
   group_by(V1, rate, stress) %>%
-  summarise(mean.comp1 = mean(z1, na.rm=T),
-            mean.comp2 = mean(z2, na.rm=T))%>%
-  ungroup %>%
-  mutate(V1 = factor(V1, levels=c('i','ɨ','e','a','o','u')),
-         rate = factor(rate, levels=c("fast","normal", "slow")),
-         stress = factor(stress, levels=c('stressed','unstressed')))%>%
-  arrange(rate,V1, stress)
+  summarise(mean.comp1 = mean(z1, na.rm = T),
+            mean.comp2 = mean(z2, na.rm = T), .groups = "drop") %>%
+  mutate(
+    V1 = factor(V1, levels = c('i', 'ɨ', 'e', 'a', 'o', 'u')),
+    rate = factor(rate, levels = c("slow", "normal", "fast")),
+    stress = factor(stress, levels = c('stressed', 'unstressed'))
+  ) %>%
+  arrange(rate, V1, stress)
 
 levels(z_sum$V1) <- c("i", "ɨ", "e", "a", "o", "u")
 
 z1z2.plot <- z_sum %>%
   ggplot() +
-  aes(mean.comp2,mean.comp1, linetype=stress, label=V1)+
-  geom_polygon(color = 'black', fill=NA)+
-  scale_x_reverse("z2", limits=c(2, -1.5))+
-  scale_y_reverse("z1", limits=c(1.5, -1.5))+
-  scale_fill_grey()+
-  theme_minimal()+
-  #coord_fixed()+ 
-  geom_point()+
-  geom_text_repel(size=4)+
-  theme(legend.position="bottom",
-        legend.title=element_blank())+
-  theme(plot.margin = unit(c(0,0, 0,0), "lines"))+
-  facet_wrap(~rate)
+  aes(mean.comp2, mean.comp1, linetype = stress) +
+  geom_polygon(color = 'grey5', fill = NA) +
+  scale_x_reverse(limits = c(2, -1.5)) +
+  scale_y_reverse(limits = c(1.5, -1.5)) +
+  scale_fill_grey() +
+  scale_shape_manual(values = c(15, 4, 17, 19, 23, 8)) +
+  scale_colour_manual(values = c("#7ACCD7", "#21282F", "#115896", "#7C6C65", "#4C4C53", "#BA2F00")) +
+  #coord_fixed()+
+  geom_point(aes(shape = V1, colour = V1), size = 4) +
+  theme(legend.position = "bottom",
+        legend.title = element_blank()) +
+  theme(plot.margin = unit(c(0, 0, 0, 0), "lines")) +
+  labs(
+    title = "(B) Predicted vowel space",
+    y = "Predicted Z1 (z-scores)",
+    x = "Prediced Z2 (z-scores)"
+  ) +
+  facet_wrap( ~ rate)
 ```
 
 
 ```{r save-acc-art}
-ggarrange(acc.plot, z1z2.plot, ncol=1)
+acc.plot + z1z2.plot + plot_layout(ncol = 1)
 
 ggsave(file = "./figures/Figure3.pdf", height = 6.5, width = 7, device = cairo_pdf)
 ```
@@ -412,7 +423,7 @@ dur <- ef_dur %>%
     geom_errorbar(aes(ymin = lower, ymax = upper), position = pd, width = 0, size = 0.5) +
     facet_wrap(~rate) +
     scale_x_discrete("Vowel") +
-    scale_y_continuous("Duration (ms)")
+    scale_y_continuous("Vowel duration (ms)")
 
 dur
 
@@ -520,56 +531,59 @@ f1.lmer.final <- lmer(
 ```{r f1-emmeans}
 emmeans(f1.lmer.final, pairwise ~ stress | V1)$contrasts
 
-test(emtrends(f1.lmer.final, ~ V1, var="duration"))
-
+test(emtrends(f1.lmer.final, ~ V1, var = "duration"))
 ```
 
 
 ```{r ef-f1}
-
 ef1 <- as.data.frame(effect("V1:duration", f1.lmer.final)) %>%
-  mutate(V1 = factor(V1, levels=c('i','ɨ','u','e','a','o')))
+  mutate(V1 = factor(V1, levels = c('i', 'ɨ', 'u', 'e', 'a', 'o')))
 
 ef2 <- as.data.frame(effect("V1:stress", f1.lmer.final)) %>%
-  mutate(V1 = factor(V1, levels=c('i','ɨ','u','e','a','o')))
+  mutate(V1 = factor(V1, levels = c('i', 'ɨ', 'u', 'e', 'a', 'o')))
 
-midpoint_rotated <- midpoint_rotated %>%
-  mutate(V1 = factor(V1, levels=c('i','ɨ','u','e','a','o')))
+midpoint_rotated_ef1 <- midpoint_rotated %>%
+  mutate(V1 = factor(V1, levels = c('i', 'ɨ', 'u', 'e', 'a', 'o')))
 
 pd = position_dodge(0.5)
 
 f1.dur.plot <- ef1 %>%
-  ggplot()+
-  aes(duration, fit)+
+  ggplot() +
+  aes(duration, fit) +
   #add data
-  geom_point(data=midpoint_rotated, aes(duration, f1.z),alpha=0.5)+
-  geom_ribbon(aes(ymin = lower, ymax = upper), alpha=0.3)+
-  geom_line()+
+  geom_point(data = midpoint_rotated_ef1, aes(duration, f1.z), alpha = 0.08) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
+  geom_line() +
   #geom_line(aes(duration, -upper, color=stress), linetype=2)+
   #geom_line(aes(duration, -lower, color=stress), linetype=2)+
   #scale_color_grey()+
-  facet_wrap(~V1)+
-  scale_y_reverse("F1.z")+
-  scale_x_continuous('duration (ms)')+
-  theme_bw()
+  facet_wrap( ~ V1) +
+  scale_y_reverse("Normalised F1 (z-scores)") +
+  scale_x_continuous('Vowel duration (ms)')
 
 
-f1.stress.plot<-ef2 %>%
-  ggplot()+
-  aes(V1, fit, color=stress, linetype=stress)+
-  geom_point(position=pd)+
-    geom_errorbar(aes(ymin = lower, ymax = upper), position = pd, width = 0, size = 0.5) +
-  theme_bw()+
-  scale_x_discrete('vowel')+
-  scale_y_continuous('F1.z')
+f1.stress.plot <- ef2 %>%
+  ggplot() +
+  aes(V1, fit, color = stress, linetype = stress) +
+  geom_point(position = pd) +
+  geom_errorbar(
+    aes(ymin = lower, ymax = upper),
+    position = pd,
+    width = 0,
+    size = 0.5
+  ) +
+  scale_x_discrete('Vowel')
 
-f1 <- ggarrange(f1.dur.plot, f1.stress.plot, ncol=2)
+f1.dur.plot + f1.stress.plot + plot_layout(ncol = 2, widths = c(2/3, 1/3))
 
 
-ggsave(f1, file = "./figures/Figure5.pdf", width = 7, height = 5, device = cairo_pdf)
+ggsave(
+  file = "./figures/Figure5.pdf",
+  width = 7,
+  height = 5,
+  device = cairo_pdf
+)
 ```
-
-
 
 ## F2
 
@@ -641,42 +655,39 @@ f2.lmer.final <- lmer(
 
 
 ```{r f2-emmeans}
-
-test(emtrends(f2.lmer.final, ~ V1, var="duration"))
-
+test(emtrends(f2.lmer.final, ~ V1, var = "duration"))
 ```
 
 
 
 ```{r ef-f2}
+ef2 <- as.data.frame(effect("V1:duration", f2.lmer.final)) %>%
+  mutate(V1 = factor(V1, levels = c('i', 'u', 'ɨ', 'e', 'o', 'a')))
 
-ef1 <- as.data.frame(effect("V1:duration", f2.lmer.final)) %>%
-  mutate(V1 = factor(V1, levels=c('i','u','e','o','ɨ','a')))
-
-midpoint_rotated <- midpoint_rotated %>%
-  mutate(V1 = factor(V1, levels=c('i','u','e','o','ɨ','a')))
+midpoint_rotated_ef2 <- midpoint_rotated %>%
+  mutate(V1 = factor(V1, levels = c('i', 'u', 'ɨ', 'e', 'o', 'a')))
 
 
-f2.dur.plot <- ef1 %>%
-  ggplot()+
-  aes(duration, fit)+
+ef2 %>%
+  ggplot() +
+  aes(duration, fit) +
   #add data
-  geom_ribbon(aes(ymin = lower, ymax = upper), alpha=0.3)+
-  geom_line()+
-  geom_point(data=midpoint_rotated, aes(duration, f2.z),alpha=0.5)+
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
+  geom_line() +
+  geom_point(data = midpoint_rotated_ef2, aes(duration, f2.z), alpha = 0.08) +
   #geom_line(aes(duration, -upper, color=stress), linetype=2)+
   #geom_line(aes(duration, -lower, color=stress), linetype=2)+
   #scale_color_grey()+
-  facet_wrap(~V1, ncol=2)+
-  scale_y_reverse("F2.z")+
-  scale_x_continuous('duration (ms)')+
-  theme_bw()
+  facet_wrap( ~ V1, ncol = 3) +
+  scale_y_reverse("Normalised F2 (z-scores)") +
+  scale_x_continuous('Vowel duration (ms)')
 
-
-f2.dur.plot
-
-ggsave(f2.dur.plot, file = "./figures/Figure6.pdf", width = 3, height = 4, device = cairo_pdf)
-
+ggsave(
+  file = "./figures/Figure6.pdf",
+  width = 3,
+  height = 4,
+  device = cairo_pdf
+)
 ```
 
 
@@ -696,7 +707,6 @@ z1.lmer.base <- lmer(
     optCtrl = list(method = "bobyqa")
   )
 )
-
 
 z1.lmer.stress1 <- lmer(
   z1 ~
@@ -726,7 +736,6 @@ z1.lmer.stress2 <- lmer(
 
 anova(z1.lmer.base, z1.lmer.stress1, z1.lmer.stress2)
 
-
 r2(z1.lmer.base)
 r2(z1.lmer.stress1)
 r2(z1.lmer.stress2)
@@ -745,50 +754,46 @@ z1.lmer.final <- lmer(
     optCtrl = list(method = "bobyqa")
   )
 )
-
-
 ```
 
 
 ```{r z1-emmeans}
-
-test(emtrends(z1.lmer.final, ~ V1, var="duration"))
-
+test(emtrends(z1.lmer.final, ~ V1, var = "duration"))
 ```
 
 
 
 ```{r ef-z1}
-
 ef1 <- as.data.frame(effect("V1:duration", z1.lmer.final)) %>%
-  mutate(V1 = factor(V1, levels=c('i','ɨ','u','e','a','o')))
+  mutate(V1 = factor(V1, levels = c('i', 'ɨ', 'u', 'e', 'a', 'o')))
 
-midpoint_rotated <- midpoint_rotated %>%
-  mutate(V1 = factor(V1, levels=c('i','ɨ','u','e','a','o')))
+midpoint_rotated_z1 <- midpoint_rotated %>%
+  mutate(V1 = factor(V1, levels = c('i', 'ɨ', 'u', 'e', 'a', 'o')))
 
-z1.dur.ef<-ef1 %>%
-  ggplot()+
-  aes(duration, fit)+
+z1.dur.ef <- ef1 %>%
+  ggplot() +
+  aes(duration, fit) +
   #add data
-  geom_ribbon(aes(ymin = lower, ymax = upper), alpha=0.3)+
-  geom_line()+
-  geom_point(data=midpoint_rotated, aes(duration, z1),alpha=0.5)+
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
+  geom_line() +
+  geom_point(data = midpoint_rotated_z1, aes(duration, z1), alpha = 0.5) +
   #geom_line(aes(duration, -upper, color=stress), linetype=2)+
   #geom_line(aes(duration, -lower, color=stress), linetype=2)+
   #scale_color_grey()+
-  facet_wrap(~V1)+
-  scale_y_reverse("z1.z")+
-  scale_x_continuous('duration (ms)')+
-  theme_bw()
+  facet_wrap( ~ V1) +
+  scale_y_reverse("z1.z") +
+  scale_x_continuous('duration (ms)')
 
 z1.dur.ef
 
-
-ggsave(z1.dur.ef, file = "./figures/Figure7.pdf", width = 7, height = 5, device = cairo_pdf)
+ggsave(
+  z1.dur.ef,
+  file = "./figures/Figure7.pdf",
+  width = 7,
+  height = 5,
+  device = cairo_pdf
+)
 ```
-
-
-
 
 ## Z2
 
@@ -855,35 +860,40 @@ z2.lmer.final <- lmer(
 
 
 ```{r z2-emmeans}
-test(emtrends(z2.lmer.final, ~ V1, var="duration"))
+test(emtrends(z2.lmer.final, ~ V1, var = "duration"))
 ```
 
 
 ```{r ef-z2}
 ef1 <- as.data.frame(effect("V1:duration", z2.lmer.final)) %>%
-  mutate(V1 = factor(V1, levels=c('i','u','e','o','ɨ','a')))
+  mutate(V1 = factor(V1, levels = c('i', 'u', 'e', 'o', 'ɨ', 'a')))
 
-midpoint_rotated <- midpoint_rotated %>%
-  mutate(V1 = factor(V1, levels=c('i','u','e','o','ɨ','a')))
+midpoint_rotated_z2 <- midpoint_rotated %>%
+  mutate(V1 = factor(V1, levels = c('i', 'u', 'e', 'o', 'ɨ', 'a')))
 
 z2.dur.plot <- ef1 %>%
-  ggplot()+
-  aes(duration, fit)+
+  ggplot() +
+  aes(duration, fit) +
   #add data
-  geom_ribbon(aes(ymin = lower, ymax = upper), alpha=0.3)+
-  geom_line()+
-  geom_point(data=midpoint_rotated, aes(duration, f2.z),alpha=0.5)+
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
+  geom_line() +
+  geom_point(data = midpoint_rotated_z2, aes(duration, f2.z), alpha = 0.5) +
   #geom_line(aes(duration, -upper, color=stress), linetype=2)+
   #geom_line(aes(duration, -lower, color=stress), linetype=2)+
   #scale_color_grey()+
-  facet_wrap(~V1, ncol=2)+
-  scale_y_reverse("z2")+
-  scale_x_continuous('duration (ms)')+
-  theme_bw()
+  facet_wrap( ~ V1, ncol = 2) +
+  scale_y_reverse("z2") +
+  scale_x_continuous('duration (ms)')
 
 z2.dur.plot
 
-ggsave(z2.dur.plot, file = "./figures/Figure8.pdf", width = 4, height = 5, device = cairo_pdf)
+ggsave(
+  z2.dur.plot,
+  file = "./figures/Figure8.pdf",
+  width = 4,
+  height = 5,
+  device = cairo_pdf
+)
 ```
 
 # Model summaries
@@ -891,31 +901,31 @@ ggsave(z2.dur.plot, file = "./figures/Figure8.pdf", width = 4, height = 5, devic
 ## Duration
 
 ```{r dur-lmer-tab}
-tab_model(dur.lmer.full, digits = 4, digits.p = 5, digits.re = 4)
+tab_model(dur.lmer.full, digits = 4, digits.p = 5, digits.re = 4, p.val = "kr", show.df = TRUE)
 ```
 
 ## F1
 
 ```{r f1-lmer-tab}
-tab_model(f1.lmer.final, digits = 4, digits.p = 5, digits.re = 4)
+tab_model(f1.lmer.final, digits = 4, digits.p = 5, digits.re = 4, p.val = "kr", show.df = TRUE)
 ```
 
 ## F2
 
 ```{r f2-lmer-tab}
-tab_model(f2.lmer.final, digits = 4, digits.p = 5, digits.re = 4)
+tab_model(f2.lmer.final, digits = 4, digits.p = 5, digits.re = 4, p.val = "kr", show.df = TRUE)
 ```
 
 ## Z1
 
 ```{r z1-lmer-tab}
-tab_model(z1.lmer.final, digits = 4, digits.p = 5, digits.re = 4)
+tab_model(z1.lmer.final, digits = 4, digits.p = 5, digits.re = 4, p.val = "kr", show.df = TRUE)
 ```
 
 ## Z2
 
 ```{r z2-lmer-tab}
-tab_model(z2.lmer.final, digits = 4, digits.p = 5, digits.re = 4)
+tab_model(z2.lmer.final, digits = 4, digits.p = 5, digits.re = 4, p.val = "kr", show.df = TRUE)
 ```
 
 # Further exploratory analyses
@@ -991,6 +1001,7 @@ tab_model(f0.lmer.final)
 
 
 # Session info
+
 
 ```{r sess-info}
 devtools::session_info()

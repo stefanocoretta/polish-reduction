@@ -1,6 +1,6 @@
 {
   "R": {
-    "Version": "4.0.5",
+    "Version": "4.0.3",
     "Repositories": [
       {
         "Name": "CRAN",
@@ -883,6 +883,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "95ef9167b75dde9d2ccc3c7528393e7e"
+    },
+    "printr": {
+      "Package": "printr",
+      "Version": "0.1.1",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "15507ff6ffe06deda4af3d63d4672ba0"
     },
     "processx": {
       "Package": "processx",

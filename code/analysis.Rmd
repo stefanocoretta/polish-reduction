@@ -29,7 +29,7 @@ library(performance)
 library(effects)
 library(sjPlot)
 library(emmeans)
-theme_set(theme_bw(base_family = "Lato"))
+theme_set(theme_minimal())
 options(
   ggplot2.discrete.fill = list(
     # 2 cols
@@ -165,8 +165,8 @@ PL01.rot.plot <- sum_PL01 %>%
     aes(z2, z1, label = V1) +
     geom_polygon(color = "black", fill = NA, size = 0.25, linetype = "dashed") +
     geom_label(aes(fill = V1), colour = "white") +
-    scale_x_reverse("z2") +
-    scale_y_reverse("z1", limits = c(1, -1.25)) +
+    scale_x_reverse("Z2") +
+    scale_y_reverse("Z1", limits = c(1, -1.25)) +
     coord_fixed() + 
     theme(legend.position = "none") +
     ggtitle("Predicted formants")
@@ -188,7 +188,7 @@ PL01.acc.plot <- sum_PL01 %>%
 ```{r save-norm}
 PL01.smooths.plot + PL01.PCA.plot + PL01.rot.plot + PL01.acc.plot
 
-ggsave(file = "./figures/Figure1.pdf", width = 7, height = 5, device = cairo_pdf)
+ggsave(file = "./figures/Figure3.pdf", width = 7, height = 5, device = cairo_pdf)
 ```
 
 
@@ -247,7 +247,7 @@ plot_polar_smooths(
 
 ## Duration
 
-Figure 2 from the paper with boxplots and means of vowel duration depending on speech rate and stress.
+Figure 4 from the paper with boxplots and means of vowel duration depending on speech rate and stress.
 
 ```{r stress-rate}
 dur.sum <- midpoint_rotated %>%
@@ -271,7 +271,7 @@ dur.stress.rate <- midpoint_rotated %>%
 ```
 
 ```{r save-rate-stress}
-ggsave(dur.stress.rate, file = "./figures/Figure2.pdf", width = 6, height = 3, device = cairo_pdf)
+ggsave(dur.stress.rate, file = "./figures/Figure4.pdf", width = 6, height = 3, device = cairo_pdf)
 ```
 
 
@@ -292,24 +292,27 @@ acc.vowel.plot <- midpoint_rotated %>%
 
 levels(acc.vowel.plot$V1) = c('i', 'e', 'a', 'o', 'u', 'ɨ')
 
-acc.plot <- acc.vowel.plot %>%
-  ggplot() +
-  aes(mean.f2, mean.f1, linetype = stress) +
-  geom_polygon(color = 'grey5', fill = NA) +
-  scale_x_reverse(limits = c(2, -1.5)) +
-  scale_y_reverse(limits = c(2.5, -1.5)) +
-  scale_fill_grey() +
-  scale_shape_manual(values = c(15, 17, 19, 23, 8, 4)) +
-  geom_point(aes(shape = V1, colour = V1), size = 4) +
-  #coord_fixed()+
-  theme(legend.position = "none") +
+acc.plot<-acc.vowel.plot%>%
+  ggplot()+
+  aes(mean.f2,mean.f1, linetype=stress, label=V1)+
+  geom_polygon(color = 'black', fill=NA)+
+  scale_x_reverse(limits=c(2, -1.5))+
+  scale_y_reverse( limits=c(2.5, -1.5))+
+  scale_fill_grey()+
+  geom_point()+
+  geom_text_repel(size=4)+
+  #coord_fixed()+ 
+  theme(legend.position="bottom",
+        legend.title=element_blank())+
+  facet_wrap(~rate)+
   labs(
     title = "(A) Observed vowel space",
     y = "Normalised F1 (z-scores)",
-    x = "Normalised F2 (z-scores)"
-  ) +
-  facet_wrap( ~ rate) +
+    x = "Normalised F2 (z-scores)")+
   theme(plot.margin = unit(c(0, 0, 0, 0), "lines"))
+
+
+
 ```
 
 
@@ -327,33 +330,32 @@ z_sum <- midpoint_rotated %>%
 
 levels(z_sum$V1) <- c("i", "ɨ", "e", "a", "o", "u")
 
-z1z2.plot <- z_sum %>%
-  ggplot() +
-  aes(mean.comp2, mean.comp1, linetype = stress) +
-  geom_polygon(color = 'grey5', fill = NA) +
-  scale_x_reverse(limits = c(2, -1.5)) +
-  scale_y_reverse(limits = c(1.5, -1.5)) +
-  scale_fill_grey() +
-  scale_shape_manual(values = c(15, 4, 17, 19, 23, 8)) +
-  scale_colour_manual(values = c("#7ACCD7", "#21282F", "#115896", "#7C6C65", "#4C4C53", "#BA2F00")) +
-  #coord_fixed()+
-  geom_point(aes(shape = V1, colour = V1), size = 4) +
-  theme(legend.position = "bottom",
-        legend.title = element_blank()) +
-  theme(plot.margin = unit(c(0, 0, 0, 0), "lines")) +
-  labs(
+z1z2.plot<-z_sum%>%
+  ggplot()+
+  aes(mean.comp2,mean.comp1, linetype=stress, label=V1)+
+  geom_polygon(color = 'black', fill=NA)+
+  scale_x_reverse(limits=c(2, -1.5))+
+  scale_y_reverse(limits=c(1.5, -1.5))+
+  scale_fill_grey()+
+  #coord_fixed()+ 
+  geom_point()+
+  geom_text_repel(size=4)+
+  theme(legend.position="bottom",
+        legend.title=element_blank())+
+  theme(plot.margin = unit(c(0,0, 0,0), "lines"))+
+  facet_wrap(~rate)+
+    labs(
     title = "(B) Predicted vowel space",
-    y = "Predicted Z1 (z-scores)",
-    x = "Prediced Z2 (z-scores)"
-  ) +
-  facet_wrap( ~ rate)
+    y = "Z1",
+    x = "Z2")+
+  theme(plot.margin = unit(c(0, 0, 0, 0), "lines"))
 ```
 
 
 ```{r save-acc-art}
 acc.plot + z1z2.plot + plot_layout(ncol = 1)
 
-ggsave(file = "./figures/Figure3.pdf", height = 6.5, width = 7, device = cairo_pdf)
+ggsave(file = "./figures/Figure5.pdf", height = 6.5, width = 7, device = cairo_pdf)
 ```
 
 # Inferential statistics
@@ -423,11 +425,12 @@ dur <- ef_dur %>%
     geom_errorbar(aes(ymin = lower, ymax = upper), position = pd, width = 0, size = 0.5) +
     facet_wrap(~rate) +
     scale_x_discrete("Vowel") +
-    scale_y_continuous("Vowel duration (ms)")
+    scale_y_continuous("Vowel duration (ms)")+
+  theme_minimal()
 
 dur
 
-ggsave(dur, file = "./figures/Figure4.pdf", width = 7, height = 4, device = cairo_pdf)
+ggsave(dur, file = "./figures/Figure6.pdf", width = 7, height = 4, device = cairo_pdf)
 ```
 
 ```{r dur-anova}
@@ -578,7 +581,7 @@ f1.dur.plot + f1.stress.plot + plot_layout(ncol = 2, widths = c(2/3, 1/3))
 
 
 ggsave(
-  file = "./figures/Figure5.pdf",
+  file = "./figures/Figure7.pdf",
   width = 7,
   height = 5,
   device = cairo_pdf
@@ -662,10 +665,10 @@ test(emtrends(f2.lmer.final, ~ V1, var = "duration"))
 
 ```{r ef-f2}
 ef2 <- as.data.frame(effect("V1:duration", f2.lmer.final)) %>%
-  mutate(V1 = factor(V1, levels = c('i', 'u', 'ɨ', 'e', 'o', 'a')))
+  mutate(V1 = factor(V1, levels=c('i','u','e','o','ɨ','a')))
 
 midpoint_rotated_ef2 <- midpoint_rotated %>%
-  mutate(V1 = factor(V1, levels = c('i', 'u', 'ɨ', 'e', 'o', 'a')))
+  mutate(V1 = factor(V1, levels=c('i','u','e','o','ɨ','a')))
 
 
 ef2 %>%
@@ -678,12 +681,12 @@ ef2 %>%
   #geom_line(aes(duration, -upper, color=stress), linetype=2)+
   #geom_line(aes(duration, -lower, color=stress), linetype=2)+
   #scale_color_grey()+
-  facet_wrap( ~ V1, ncol = 3) +
+  facet_wrap( ~ V1, ncol = 2) +
   scale_y_reverse("Normalised F2 (z-scores)") +
   scale_x_continuous('Vowel duration (ms)')
 
 ggsave(
-  file = "./figures/Figure6.pdf",
+  file = "./figures/Figure8.pdf",
   width = 3,
   height = 4,
   device = cairo_pdf
@@ -776,19 +779,19 @@ z1.dur.ef <- ef1 %>%
   #add data
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
   geom_line() +
-  geom_point(data = midpoint_rotated_z1, aes(duration, z1), alpha = 0.5) +
+  geom_point(data = midpoint_rotated_ef2, aes(duration, z1), alpha = 0.08) +
   #geom_line(aes(duration, -upper, color=stress), linetype=2)+
   #geom_line(aes(duration, -lower, color=stress), linetype=2)+
   #scale_color_grey()+
   facet_wrap( ~ V1) +
-  scale_y_reverse("z1.z") +
+  scale_y_reverse("Z1") +
   scale_x_continuous('duration (ms)')
 
 z1.dur.ef
 
 ggsave(
   z1.dur.ef,
-  file = "./figures/Figure7.pdf",
+  file = "./figures/Figure9.pdf",
   width = 7,
   height = 5,
   device = cairo_pdf
@@ -866,10 +869,10 @@ test(emtrends(z2.lmer.final, ~ V1, var = "duration"))
 
 ```{r ef-z2}
 ef1 <- as.data.frame(effect("V1:duration", z2.lmer.final)) %>%
-  mutate(V1 = factor(V1, levels = c('i', 'u', 'e', 'o', 'ɨ', 'a')))
+  mutate(V1 = factor(V1, levels=c('i','u','e','o','ɨ','a')))
 
 midpoint_rotated_z2 <- midpoint_rotated %>%
-  mutate(V1 = factor(V1, levels = c('i', 'u', 'e', 'o', 'ɨ', 'a')))
+  mutate(V1 = factor(V1, levels=c('i','u','e','o','ɨ','a')))
 
 z2.dur.plot <- ef1 %>%
   ggplot() +
@@ -877,21 +880,21 @@ z2.dur.plot <- ef1 %>%
   #add data
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
   geom_line() +
-  geom_point(data = midpoint_rotated_z2, aes(duration, f2.z), alpha = 0.5) +
+  geom_point(data = midpoint_rotated_ef2, aes(duration, z2), alpha = 0.08) +
   #geom_line(aes(duration, -upper, color=stress), linetype=2)+
   #geom_line(aes(duration, -lower, color=stress), linetype=2)+
   #scale_color_grey()+
   facet_wrap( ~ V1, ncol = 2) +
-  scale_y_reverse("z2") +
+  scale_y_reverse("Z2") +
   scale_x_continuous('duration (ms)')
 
 z2.dur.plot
 
 ggsave(
   z2.dur.plot,
-  file = "./figures/Figure8.pdf",
-  width = 4,
-  height = 5,
+  file = "./figures/Figure10.pdf",
+  width = 3,
+  height = 4,
   device = cairo_pdf
 )
 ```

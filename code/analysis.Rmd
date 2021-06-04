@@ -94,6 +94,37 @@ The full code can be inspected on the OSF repository at <https://osf.io/hy7nt/?v
 
 # Atriculatory data processing
 
+The figure below illustrates the PC1-PC2 rotation for all individual speakers.
+
+```{r pc-ind}
+PC_ind <- midpoint_rotated %>%
+  group_by(speaker, V1) %>%
+  summarize(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2)
+  )
+
+ind.PCA.plot <- PC_ind %>%
+  mutate(V12 = factor(V1, levels = c("i", "e", "ɨ", "a", "o", "u"))) %>%
+  arrange(V12) %>%
+  ggplot() +
+    aes(PC1, PC2, label = V1) +
+   # geom_polygon(color = "black", fill = NA, size = 0.25, linetype = "dashed") +
+    geom_label(aes(fill = V1), colour = "white") +
+    scale_x_reverse("PC1") +
+    scale_y_reverse("PC2", limits = c(5.5, -4)) +
+    coord_fixed() + 
+    theme(
+      legend.position = "none"
+    ) +
+    ggtitle("Individual PCA results") +
+  facet_wrap(~speaker)
+
+
+ind.PCA.plot
+
+```
+
 This is Figure 1 from the paper, which illustrates the articulatory data processing, as well as vowel formants.
 See paper for details.
 
@@ -1003,6 +1034,429 @@ tab_model(f0.lmer.final)
 ```
 
 
+
+# Modelling after excluding slow speech rate data
+## F1
+
+```{r f1-lmer_noslow}
+
+midpoint_no_slow <- midpoint_rotated %>%
+  filter(rate!='slow')
+
+f1.lmer.base <- lmer(
+  f1.z ~
+    (1|speaker) +
+   (1|frame) +
+    V1*duration,
+  data = midpoint_no_slow,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+
+f1.lmer.stress1 <- lmer(
+  f1.z ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration + stress,
+  data = midpoint_no_slow,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+f1.lmer.stress2 <- lmer(
+  f1.z ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration + V1*stress,
+  data = midpoint_no_slow,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+
+
+anova(f1.lmer.base, f1.lmer.stress1, f1.lmer.stress2)
+
+
+
+r2(f1.lmer.base)
+r2(f1.lmer.stress1)
+r2(f1.lmer.stress2)
+
+# add random slope before extracting coefficients
+
+f1.lmer.final <- lmer(
+  f1.z ~
+    (1+stress|speaker) +
+    (1|frame) +
+    V1*duration + V1*stress,
+  data = midpoint_no_slow,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+
+
+```
+
+```{r ef-f1_noslow}
+
+
+ef1 <- as.data.frame(effect("V1:duration", f1.lmer.final)) %>%
+  mutate(V1 = factor(V1, levels = c('i', 'ɨ', 'u', 'e', 'a', 'o')))
+
+ef2 <- as.data.frame(effect("V1:stress", f1.lmer.final)) %>%
+  mutate(V1 = factor(V1, levels = c('i', 'ɨ', 'u', 'e', 'a', 'o')))
+
+midpoint_rotated_ef1 <- midpoint_no_slow %>%
+  mutate(V1 = factor(V1, levels = c('i', 'ɨ', 'u', 'e', 'a', 'o')))
+
+pd = position_dodge(0.5)
+
+f1.dur.plot <- ef1 %>%
+  ggplot() +
+  aes(duration, fit) +
+  #add data
+  geom_point(data = midpoint_rotated_ef1, aes(duration, f1.z), alpha = 0.08) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
+  geom_line() +
+  #geom_line(aes(duration, -upper, color=stress), linetype=2)+
+  #geom_line(aes(duration, -lower, color=stress), linetype=2)+
+  #scale_color_grey()+
+  facet_wrap( ~ V1) +
+  scale_y_reverse("Normalised F1 (z-scores)") +
+  scale_x_continuous('Vowel duration (ms)')
+
+
+f1.stress.plot <- ef2 %>%
+  ggplot() +
+  aes(V1, fit, color = stress, linetype = stress) +
+  geom_point(position = pd) +
+  geom_errorbar(
+    aes(ymin = lower, ymax = upper),
+    position = pd,
+    width = 0,
+    size = 0.5
+  ) +
+  scale_x_discrete('Vowel')
+
+f1.dur.plot + f1.stress.plot + plot_layout(ncol = 2, widths = c(2/3, 1/3))
+
+
+
+```
+
+
+```{r f2-lmer_noslow}
+
+f2.lmer.base <- lmer(
+  f2.z ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration,
+  data = midpoint_no_slow,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+
+f2.lmer.stress1 <- lmer(
+  f2.z ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration + stress,
+  data = midpoint_no_slow,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+f2.lmer.stress2 <- lmer(
+  f2.z ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration + V1*stress,
+  data = midpoint_no_slow,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+anova(f2.lmer.base, f2.lmer.stress1, f2.lmer.stress2)
+
+
+r2(f2.lmer.base)
+r2(f2.lmer.stress1)
+r2(f2.lmer.stress2)
+
+# significant improvement after including stress, but not improvement in R2
+
+f2.lmer.final <- lmer(
+  f2.z ~
+    (1+duration|speaker) +
+    (1|frame) +
+    V1*duration,
+  data = midpoint_no_slow,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+
+```
+
+```{r f2-emmeans_noslow}
+test(emtrends(f2.lmer.final, ~ V1, var = "duration"))
+```
+
+
+
+```{r ef-f2_noslow}
+ef2 <- as.data.frame(effect("V1:duration", f2.lmer.final)) %>%
+  mutate(V1 = factor(V1, levels=c('i','u','e','o','ɨ','a')))
+
+midpoint_rotated_ef2 <- midpoint_no_slow %>%
+  mutate(V1 = factor(V1, levels=c('i','u','e','o','ɨ','a')))
+
+
+ef2 %>%
+  ggplot() +
+  aes(duration, fit) +
+  #add data
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
+  geom_line() +
+  geom_point(data = midpoint_rotated_ef2, aes(duration, f2.z), alpha = 0.08) +
+  #geom_line(aes(duration, -upper, color=stress), linetype=2)+
+  #geom_line(aes(duration, -lower, color=stress), linetype=2)+
+  #scale_color_grey()+
+  facet_wrap( ~ V1, ncol = 2) +
+  scale_y_reverse("Normalised F2 (z-scores)") +
+  scale_x_continuous('Vowel duration (ms)')
+
+
+```
+
+
+
+
+
+
+## Z1
+
+```{r z1-lmer_noslow}
+
+z1.lmer.base <- lmer(
+  z1 ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration,
+  data = midpoint_no_slow,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+z1.lmer.stress1 <- lmer(
+  z1 ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration + stress,
+  data = midpoint_no_slow,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+z1.lmer.stress2 <- lmer(
+  z1 ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration + V1*stress,
+  data = midpoint_no_slow,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+anova(z1.lmer.base, z1.lmer.stress1, z1.lmer.stress2)
+
+r2(z1.lmer.base)
+r2(z1.lmer.stress1)
+r2(z1.lmer.stress2)
+
+# add random slope before extracting coefficients
+
+z1.lmer.final <- lmer(
+  z1 ~
+    (1+duration|speaker) +
+    (1|frame) +
+    V1*duration,
+  data = midpoint_no_slow,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+```
+
+
+```{r z1-emmeans_noslow}
+test(emtrends(z1.lmer.final, ~ V1, var = "duration"))
+```
+
+
+
+```{r ef-z1_noslow}
+ef1 <- as.data.frame(effect("V1:duration", z1.lmer.final)) %>%
+  mutate(V1 = factor(V1, levels = c('i', 'ɨ', 'u', 'e', 'a', 'o')))
+
+midpoint_rotated_z1 <- midpoint_no_slow %>%
+  mutate(V1 = factor(V1, levels = c('i', 'ɨ', 'u', 'e', 'a', 'o')))
+
+z1.dur.ef <- ef1 %>%
+  ggplot() +
+  aes(duration, fit) +
+  #add data
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
+  geom_line() +
+  geom_point(data = midpoint_rotated_ef2, aes(duration, z1), alpha = 0.08) +
+  #geom_line(aes(duration, -upper, color=stress), linetype=2)+
+  #geom_line(aes(duration, -lower, color=stress), linetype=2)+
+  #scale_color_grey()+
+  facet_wrap( ~ V1) +
+  scale_y_reverse("Z1") +
+  scale_x_continuous('duration (ms)')
+
+z1.dur.ef
+
+
+```
+
+# Z2
+
+```{r z2-lmer_noslow}
+z2.lmer.base <- lmer(
+  z2 ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration ,
+  data = midpoint_no_slow,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+z2.lmer.stress1 <- lmer(
+  z2 ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration + stress,
+  data = midpoint_no_slow,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+z2.lmer.stress2 <- lmer(
+  z2 ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration + V1*stress,
+  data = midpoint_no_slow,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+
+anova(z2.lmer.base, z2.lmer.stress1, z2.lmer.stress2)
+
+r2(z2.lmer.base)
+r2(z2.lmer.stress1)
+r2(z2.lmer.stress2)
+
+z2.lmer.final <- lmer(
+  z2 ~
+    (1+duration|speaker) +
+    (1|frame) +
+    V1*duration ,
+  data = midpoint_no_slow,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+```
+
+`
+
+
+```{r z2-emmeans_noslow}
+test(emtrends(z2.lmer.final, ~ V1, var = "duration"))
+```
+
+
+```{r ef-z2_noslow}
+ef1 <- as.data.frame(effect("V1:duration", z2.lmer.final)) %>%
+  mutate(V1 = factor(V1, levels=c('i','u','e','o','ɨ','a')))
+
+midpoint_rotated_z2 <- midpoint_no_slow %>%
+  mutate(V1 = factor(V1, levels=c('i','u','e','o','ɨ','a')))
+
+z2.dur.plot <- ef1 %>%
+  ggplot() +
+  aes(duration, fit) +
+  #add data
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
+  geom_line() +
+  geom_point(data = midpoint_rotated_ef2, aes(duration, z2), alpha = 0.08) +
+  #geom_line(aes(duration, -upper, color=stress), linetype=2)+
+  #geom_line(aes(duration, -lower, color=stress), linetype=2)+
+  #scale_color_grey()+
+  facet_wrap( ~ V1, ncol = 2) +
+  scale_y_reverse("Z2") +
+  scale_x_continuous('duration (ms)')
+
+z2.dur.plot
+
+```
 # Session info
 
 

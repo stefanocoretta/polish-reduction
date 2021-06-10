@@ -68,8 +68,6 @@ levels(midpoint_rotated$frame) <- c(
   "s_m", "z_m", "z_m", "z_w", "z_w"
 )
 
-
-
 midpoint_long <- readRDS("./data/derived/midpoint_long.rds") %>%
   mutate(
     rate = factor(rate, levels = c("fast", "normal", "slow")),
@@ -77,6 +75,9 @@ midpoint_long <- readRDS("./data/derived/midpoint_long.rds") %>%
     V1 = factor(V1, levels = c("a", "e", "i", "o", "u", "y")),
     V1 = recode_factor(V1, i = "i", e = "e", y = "ɨ", a = "a", o = "o", u = "u")
   )
+
+midpoint_wide <- readRDS("./data/derived/midpoint_wide.rds")
+formant_midpoint <- readRDS("./data/derived/formant_midpoint.rds")
 ```
 
 This supplementary document complements the paper *Distance vs. time. Articulatory and acoustic consequences of reduced vowel duration in Polish*.
@@ -1035,8 +1036,8 @@ tab_model(f0.lmer.final)
 
 
 
-# Modelling after excluding slow speech rate data
-## F1
+## Modelling after excluding slow speech rate data
+### F1
 
 ```{r f1-lmer_noslow}
 
@@ -1263,7 +1264,7 @@ ef2 %>%
 
 
 
-## Z1
+### Z1
 
 ```{r z1-lmer_noslow}
 
@@ -1362,7 +1363,7 @@ z1.dur.ef
 
 ```
 
-# Z2
+## Z2
 
 ```{r z2-lmer_noslow}
 z2.lmer.base <- lmer(
@@ -1457,6 +1458,318 @@ z2.dur.plot <- ef1 %>%
 z2.dur.plot
 
 ```
+
+## Include more PCs
+
+This function takes a wide spline dataset as input, where spline data are in Cartesian coordinates named X_1:Y_42. This function drops fanlines with missing data, and performs a PCA on the rest of the data
+
+```{r tongue-contour-pca}
+tongue_contour_pca <- function(df){
+  ## identify columns without missing values
+  columns<- df %>%
+    select(X_1:Y_42)%>%
+    select_if(~ !any(is.na(.)))
+  
+  ## select columns with no missing values
+  pca.input <-  df %>%
+    select(one_of(colnames(columns)))
+  
+  ## run pca
+  tongue.pca <- prcomp(pca.input,
+                       center = TRUE,
+                       scale. = TRUE) 
+  
+  ## add PCs to data set
+  df$PC1 <- predict(tongue.pca, df)[,1]
+  df$PC2 <- predict(tongue.pca, df)[,2]
+  df$PC3 <- predict(tongue.pca, df)[,3]
+  df$PC4 <- predict(tongue.pca, df)[,4]
+  ## include proportion of variance explained for each PC
+  df$PC1_var <- as.numeric(summary(tongue.pca)$importance[2,][1])
+  df$PC2_var <- as.numeric(summary(tongue.pca)$importance[2,][2])
+  df$PC3_var <- as.numeric(summary(tongue.pca)$importance[2,][3])
+  df$PC4_var <- as.numeric(summary(tongue.pca)$importance[2,][4])
+  return(df)
+}
+```
+
+This function applies linear regression performing formants, based on PC1 and PC2.
+Predicted formant values are added to the data (comp1 and comp2).
+
+```{r rotate-pcs}
+rotate_PCs <- function(df){
+  f1.lm =lm(f1.z~PC1+PC2 + PC3 + PC4, data=df)
+  df$comp1 = predict(f1.lm, df)
+  
+  f2.lm =lm(f2.z~PC1+PC2 + PC3 + PC4, data=df)
+  df$comp2 = predict(f2.lm, df)
+  return(df) 
+}
+```
+
+Run PCA for each speaker in dataset
+
+```{r pca}
+pca_output <- midpoint_wide%>%
+  filter(label == 'V1') %>%
+  group_by(speaker)%>%
+  do(tongue_contour_pca(.))%>%
+  ungroup
+```
+
+Join with acoustic data and rotate by-speaker.
+
+```{r join}
+midpoint_rotated_4PCs <- pca_output %>%
+  select(speaker,
+         item,
+         block,
+         PC1,
+         PC2,
+         PC3,
+         PC4,
+         PC1_var,
+         PC2_var,
+         PC3_var,
+         PC4_var) %>%
+  ### add formant info
+  inner_join(formant_midpoint[, c('speaker', 'item', 'block', 'f1.z', 'f2.z')], by =
+               c('speaker', 'item', 'block')) %>%
+  group_by(speaker) %>%
+  do(rotate_PCs(.)) %>%
+  ungroup %>%
+  select(speaker:PC4_var, z1 = comp1, z2 = comp2) %>%
+  inner_join(formant_midpoint, by = c('speaker', 'item', 'block'))
+
+midpoint_rotated_4PCs %>%
+  select(speaker, PC1_var:PC4_var) %>%
+  unique() %>%
+  mutate(combined_var = PC1_var + PC2_var + PC3_var + PC4_var) %>%
+  summarise(mean.comb = mean(combined_var))
+
+midpoint_rotated_4PCs <- midpoint_rotated_4PCs %>%
+  mutate(
+    rate = fct_recode(
+      rate,
+      slow = "Slow",
+      normal = "Normal",
+      fast = "Fast"
+    ),
+    stress = fct_recode(stress, unstressed = "pre-stressed"),
+    item = factor(item),
+    V1 = str_replace(V1, "y", "ɨ"),
+    V1 = factor(V1, levels = c("a", "e", "i", "o", "u", "ɨ")),
+    frame = item,
+    duration.log = log(duration),
+    z1 = as.numeric(z1),
+    z2 = as.numeric(z2),
+    f1.z = as.numeric(f1.z),
+    f2.z = as.numeric(f2.z)
+  )
+
+levels(midpoint_rotated_4PCs$frame) <- c(
+  "b_b",
+  "b_b",
+  "b_w",
+  "b_w",
+  "s_m",
+  "drz_w",
+  "drz_w",
+  "k_m",
+  "k_m",
+  "m_m",
+  "m_m",
+  "ni_b",
+  "ni_b",
+  "n_w",
+  "n_w",
+  "p_p",
+  "p_p",
+  "p_p",
+  "p_p",
+  "rz_p",
+  "rz_p",
+  "s_m",
+  "z_m",
+  "z_m",
+  "z_w",
+  "z_w"
+)
+
+z_sum <- midpoint_rotated_4PCs %>%
+  group_by(V1, rate, stress) %>%
+  summarise(
+    mean.comp1 = mean(z1, na.rm = T),
+    mean.comp2 = mean(z2, na.rm = T),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    V1 = factor(V1, levels = c('i', 'ɨ', 'e', 'a', 'o', 'u')),
+    rate = factor(rate, levels = c("slow", "normal", "fast")),
+    stress = factor(stress, levels = c('stressed', 'unstressed'))
+  ) %>%
+  arrange(rate, V1, stress)
+
+levels(z_sum$V1) <- c("i", "ɨ", "e", "a", "o", "u")
+```
+
+Plot space.
+
+```{r z1z2-plot}
+z_sum %>%
+  ggplot() +
+  aes(mean.comp2, mean.comp1, linetype = stress, label = V1) +
+  geom_polygon(color = 'black', fill = NA) +
+  scale_x_reverse(limits = c(2,-1.5)) +
+  scale_y_reverse(limits = c(1.5,-1.5)) +
+  scale_fill_grey() +
+  geom_point() +
+  geom_text_repel(size = 4) +
+  theme(legend.position = "bottom",
+        legend.title = element_blank()) +
+  theme(plot.margin = unit(c(0, 0, 0, 0), "lines")) +
+  facet_wrap( ~ rate) +
+  labs(title = "(B) Predicted vowel space",
+       y = "Z1",
+       x = "Z2") +
+  theme(plot.margin = unit(c(0, 0, 0, 0), "lines"))
+```
+
+### Z1
+
+```{r z1}
+z1.lmer.base <- lmer(
+  z1 ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration,
+  data = midpoint_rotated_4PCs,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+z1.lmer.stress1 <- lmer(
+  z1 ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration + stress,
+  data = midpoint_rotated_4PCs,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+z1.lmer.stress2 <- lmer(
+  z1 ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration + V1*stress,
+  data = midpoint_rotated_4PCs,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+anova(z1.lmer.base, z1.lmer.stress1, z1.lmer.stress2)
+
+r2(z1.lmer.base)
+r2(z1.lmer.stress1)
+r2(z1.lmer.stress2)
+```
+
+No significant effect of stress emerges.
+
+```{r z1-lmer-final}
+z1.lmer.final <- lmer(
+  z1 ~
+    (1+duration|speaker) +
+    (1|frame) +
+    V1*duration,
+  data = midpoint_rotated_4PCs,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+z1.lmer.final
+```
+
+### Z2
+
+```{r z2}
+z2.lmer.base <- lmer(
+  z2 ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration ,
+  data = midpoint_rotated_4PCs,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+z2.lmer.stress1 <- lmer(
+  z2 ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration + stress,
+  data = midpoint_rotated_4PCs,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+z2.lmer.stress2 <- lmer(
+  z2 ~
+    (1|speaker) +
+    (1|frame) +
+    V1*duration + V1*stress,
+  data = midpoint_rotated_4PCs,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+
+anova(z2.lmer.base, z2.lmer.stress1, z2.lmer.stress2)
+
+r2(z2.lmer.base)
+r2(z2.lmer.stress1)
+r2(z2.lmer.stress2)
+```
+
+```{r z2-lmer-final}
+z2.lmer.final <- lmer(
+  z2 ~
+    (1+duration|speaker) +
+    (1|frame) +
+    V1*duration ,
+  data = midpoint_rotated_4PCs,
+  control = lmerControl(
+    optimizer = "optimx",
+    calc.derivs = FALSE,
+    optCtrl = list(method = "bobyqa")
+  )
+)
+
+z2.lmer.final
+```
+
 # Session info
 
 

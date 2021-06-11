@@ -82,14 +82,6 @@ formant_midpoint <- readRDS("./data/derived/formant_midpoint.rds")
 
 This supplementary document complements the paper *Distance vs. time. Articulatory and acoustic consequences of reduced vowel duration in Polish*.
 
-The following sections illustrate:
-
-1. The data extracted from ultrasound images, and the formants.
-2. Descriptive plots of the raw data.
-3. Code and plots of the linear regression models.
-4. Summaries of the models in 3.
-5. Extra analyses of F0.
-
 Only relevant R code is shown in this document.
 The full code can be inspected on the OSF repository at <https://osf.io/hy7nt/?view_only=d06775a2cb1d4786a0442b0f15d73296>, in the file `code/analysis.Rmd`.
 

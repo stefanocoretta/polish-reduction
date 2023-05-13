@@ -29,7 +29,7 @@ midpoint_long <- readRDS("~/repos/polish-reduction/data/derived/midpoint_long.rd
 
 vowels_gam <- polar_gam(
   Y ~
-    s(X, V1, bs = "fs", k = 8),
+    s(X, by = V1, bs = "fs", k = 20),
   data = midpoint_long,
   # fan_lines = c(5, 25),
   origin = c(15, -50)
@@ -37,7 +37,12 @@ vowels_gam <- polar_gam(
 
 summary(vowels_gam)
 
-v_gams_preds <- predict_polar_gam(vowels_gam, length_out = 100)
+v_gams_preds <- predict_polar_gam(vowels_gam, length_out = 100) %>%
+  mutate(
+    V1 = str_replace(V1, "y", "ɨ"),
+    V1 = str_replace(V1, "e", "ɛ"),
+    V1 = str_replace(V1, "o", "ɔ")
+  )
 
 v_highest <- v_gams_preds %>%
   group_by(V1) %>%
@@ -47,19 +52,18 @@ v_gams_preds %>%
   ggplot(aes(X, Y, colour = V1)) +
   geom_path(linewidth = 2.5) +
   geom_point(size = 0.01, colour = "white") +
-  geom_label_repel(
+  geom_label(
     data = v_highest,
     aes(label = V1, fill = V1),
     colour = c("white", "white", "white", "black", "white", "white"),
     size = 6,
     label.r = unit(0.3, "lines"),
-    label.padding = unit(0.3, "lines"),
-    min.segment.length = 15
+    label.padding = unit(0.3, "lines")
   ) +
   scale_color_manual(values = hoiho_7) +
   labs(
     x = "Back to front (mm)", y = "Low to high (mm)",
-    caption = "Polar GAM smoothing, k = 8"
+    caption = "Polar GAM smoothing, k = 20"
   ) +
   theme(legend.position = "none")
 

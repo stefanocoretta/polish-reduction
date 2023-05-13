@@ -16,26 +16,38 @@ options(ggplot2.discrete.fill = hoiho_7)
 
 midpoint_long <- readRDS("~/repos/polish-reduction/data/derived/midpoint_long.rds") %>%
   filter(
-    speaker != "PL09",
+    speaker == "PL08",
     stress == "stressed",
     rate == "normal",
-    fan_line > 9, fan_line < 31
+    item %in% c("papa", "popa", "bywa", "mimo", "sumo", "rzepa"),
+    fan_line > 4, fan_line < 36
   ) %>%
-  mutate(V1 = as.factor(V1))
+  mutate(V1 = as.factor(V1), speaker = as.factor(speaker))
 
-# midpoint_long %>%
-#   ggplot(aes(X, Y, colour = fan_line)) +
-#   geom_point()
+midpoint_long %>%
+  ggplot(aes(X, Y, colour = fan_line)) +
+  geom_point(alpha = 1) +
+  coord_fixed() +
+  facet_wrap(~ speaker)
+
+midpoint_long %>%
+  ggplot(aes(X, Y, colour = V1)) +
+  geom_point(alpha = 0.5) +
+  coord_fixed() +
+  facet_wrap(~ V1)
+
+# GAM ----
 
 vowels_gam <- polar_gam(
   Y ~
-    s(X, by = V1, bs = "fs", k = 20),
+    s(X, V1, bs = "fs", k = 8),
   data = midpoint_long,
-  # fan_lines = c(5, 25),
-  origin = c(15, -50)
+  fan_lines = c(8, 25)
 )
 
 summary(vowels_gam)
+
+# Plot GAM ----
 
 v_gams_preds <- predict_polar_gam(vowels_gam, length_out = 100) %>%
   mutate(
@@ -61,10 +73,13 @@ v_gams_preds %>%
     label.padding = unit(0.3, "lines")
   ) +
   scale_color_manual(values = hoiho_7) +
+  coord_fixed() +
   labs(
     x = "Back to front (mm)", y = "Low to high (mm)",
-    caption = "Polar GAM smoothing, k = 20"
+    caption = "Polar GAM smoothing, k = 8"
   ) +
   theme(legend.position = "none")
 
 ggsave("figures/uti-vowels-gam.png", width = 7, height = 5)
+
+
